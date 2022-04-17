@@ -80,7 +80,7 @@ class LibriSamples(torch.utils.data.Dataset):
         y = torch.tensor([self.letter2index[x] for x in y_s])
         return x,y
 
-    def collate_fn(batch):
+    def collate_fn(self,batch):
         x_batch = [x for x,y in batch]
         y_batch = [y for x,y in batch]
         batch_x_pad = pad_sequence(x_batch)
@@ -134,9 +134,9 @@ def get_dataloader(root, batch_size=64, num_workers=4):
     train_data = LibriSamples(root, l2i, 'train')
     val_data = LibriSamples(root, l2i, 'dev')
     test_data = LibriSamplesTest(root, "test_order.csv")
-    train_loader = DataLoader(train_data, num_workers=num_workers, batch_size = batch_size)
-    val_loader = DataLoader(val_data, num_workers=num_workers, batch_size = batch_size)
-    test_loader = DataLoader(test_data, num_workers=num_workers, batch_size = batch_size)
+    train_loader = DataLoader(train_data, num_workers=num_workers, batch_size = batch_size, collate_fn=train_data.collate_fn)
+    val_loader = DataLoader(val_data, num_workers=num_workers, batch_size = batch_size, collate_fn=val_data.collate_fn)
+    test_loader = DataLoader(test_data, num_workers=num_workers, batch_size = batch_size, collate_fn=test_data.collate_fn)
     return train_loader, val_loader, test_loader
 if(__name__ == "__main__"):
     test_dataloaders()
