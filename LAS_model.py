@@ -45,10 +45,13 @@ class pBLSTM(nn.Module):
         if(x.shape[0]%2 == 1):
             x = x[:-1, :, :]
             len_x[len_x.argmax()] -= 1
-        len_x = torch.minimum(len_x.max()/2, len_x)
+        for i in range(len_x.shape[0]):
+            if(len_x[i]%2 == 1):
+                len_x[i] +=1
+        len_x = len_x/2
         x = x.permute(1,0,2)
         x = x.reshape((x.shape[0], int(x.shape[1]/2), x.shape[2]*2))
-        from IPython import embed; embed()
+        # from IPython import embed; embed()
         x = x.permute(1,0,2)
         packed_input = pack_padded_sequence(x,len_x, enforce_sorted=False)
         del x, len_x
