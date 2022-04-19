@@ -40,8 +40,9 @@ class pBLSTM(nn.Module):
 		self.blstm = nn.LSTM(input_size = input_dim*2, hidden_size = hidden_dim, num_layers=1, bidirectional=True)
 
 
-	def forward(self, x, len_x):
+	def forward(self, inp):
 		# from IPython import embed; embed()
+		x, len_x  = pad_packed_sequence(inp)
 		if(x.shape[0]%2 == 1):
 			x = x[:-1, :, :]
 			len_x[len_x.argmax()] -= 1
@@ -56,10 +57,7 @@ class pBLSTM(nn.Module):
 		packed_input = pack_padded_sequence(x,len_x, enforce_sorted=False)
 		del x, len_x
 		out1, (out2, out3) = self.blstm(packed_input)
-		del out2, out3
-		out, lengths  = pad_packed_sequence(out1)
-		del out1
-		return out, lengths
+		return out1
 
 class Encoder(nn.Module):
 	'''
@@ -72,8 +70,8 @@ class Encoder(nn.Module):
 		#TODO add DropOut Below, maybe add more layers
 		self.pBLSTMs = nn.ModuleList([pBLSTM(input_dim = encoder_hidden_dim*2, hidden_dim = encoder_hidden_dim)]*num_layers)
 		self.pBLSTMs = nn.Sequential(*self.pBLSTMs)
-		self.key_network = nn.Linear(encoder_hidden_dim*2, 128)
-		self.value_network = nn.Linear(encoder_hidden_dim*2,128)
+		self.key_network = nn.Linear(in_features = encoder_hidden_dim*2, out_features = 128)
+		self.value_network = nn.Linear(in_features = encoder_hidden_dim*2,out_features = 128)
 
 	def forward(self, x, len_x):
 		"""
@@ -89,13 +87,15 @@ class Encoder(nn.Module):
                 your pBLSTM network.
         """
 		packed_input = pack_padded_sequence(x,len_x, enforce_sorted=False)
-		del x, len_x
 		out1, (out2, out3) = self.lstm(packed_input)
 		del out2, out3
-		out, lengths  = pad_packed_sequence(out1)
-		del out1
-		out, lengths = self.pBLSTMs(out, lengths)
-		print(out.shape, lengths.shape)
+		out1 = self.pBLSTMs(out1)
+		out, lengths = pad_packed_sequence(out1)
+		print(out.shape)
+		out = out.permute(1,0,2)
+		key = self.key_network(out)
+		value = self.value_network(out)
+		return key, value, lengths
 
 	
 
@@ -119,12 +119,12 @@ def test_encoder():
 	x,y,len_x, len_y = next(iter(train_loader))
 	pyr = Encoder(int(x.shape[-1]), 256)
 	print(x.shape)
-	y, len_y = pyr(x, len_x)
-	print(y.shape)
+	key, value, len_y = pyr(x, len_x)
+	print(key.shape, value.shape)
 
 
 
 
 if(__name__ == "__main__"):
-	#test_pBLSTM()
+	# test_pBLSTM()
 	test_encoder()
