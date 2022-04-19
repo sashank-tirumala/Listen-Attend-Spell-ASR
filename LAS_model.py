@@ -21,20 +21,6 @@ from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_se
 import csv
 
 class pBLSTM(nn.Module):
-	'''
-	Pyramidal BiLSTM
-	Read paper and understand the concepts and then write your implementation here.
-
-	At each step,
-	1. Pad your input if it is packed
-	2. Truncate the input length dimension by concatenating feature dimension
-		(i) How should  you deal with odd/even length input? 
-		(ii) How should you deal with input length array (x_lens) after truncating the input?
-	3. Pack your input
-	4. Pass it into LSTM layer
-
-	To make our implementation modular, we pass 1 layer at a time.
-	'''
 	def __init__(self, input_dim, hidden_dim):
 		super(pBLSTM, self).__init__()
 		self.blstm = nn.LSTM(input_size = input_dim*2, hidden_size = hidden_dim, num_layers=1, bidirectional=True)
@@ -60,10 +46,6 @@ class pBLSTM(nn.Module):
 		return out1
 
 class Encoder(nn.Module):
-	'''
-	Encoder takes the utterances as inputs and returns the key, value and unpacked_x_len.
-
-	'''
 	def __init__(self, input_dim, encoder_hidden_dim, key_value_size=128, num_layers=4):
 		super(Encoder, self).__init__()
 		self.lstm = nn.LSTM(input_size = input_dim, hidden_size = encoder_hidden_dim, bidirectional=True, num_layers=1)
@@ -74,18 +56,6 @@ class Encoder(nn.Module):
 		self.value_network = nn.Linear(in_features = encoder_hidden_dim*2,out_features = 128)
 
 	def forward(self, x, len_x):
-		"""
-        1. Pack your input and pass it through the first LSTM layer (no truncation)
-        2. Pass it through the pyramidal LSTM layer
-        3. Pad your input back to (B, T, *) or (T, B, *) shape
-        4. Output Key, Value, and truncated input lens
-
-        Key and value could be
-            (i) Concatenated hidden vectors from all time steps (key == value).
-            (ii) Linear projections of the output from the last pBLSTM network.
-                If you choose this way, you can use the final output of
-                your pBLSTM network.
-        """
 		packed_input = pack_padded_sequence(x,len_x, enforce_sorted=False)
 		out1, (out2, out3) = self.lstm(packed_input)
 		del out2, out3
@@ -97,8 +67,25 @@ class Encoder(nn.Module):
 		value = self.value_network(out)
 		return key, value, lengths
 
-	
+class bmmAttention(nn.Module):
+	def __init__(self, normalize = False):
+		super(bmmAttention, self).__init__()
+		# Optional: dropout
 
+	def forward(self, query, key, value, mask):
+		#TODO add normalize option
+		query=query.reshape(query.shape[0],-1,1)
+		print("query: ", query.shape)
+		energy  = torch.bmm(key, query) + 1e-9
+		print("energy: ", energy.shape)
+		energy = torch.mul(energy, mask)
+		attention = F.softmax(energy, dim=1) #Pretty sure it is right, but noting anyway
+		print("attention: ",attention.shape)
+		print("value: ",value.shape)
+		value = value.permute(0,2,1)
+		context = torch.bmm(value, attention)
+		print("context: ", context.shape)
+		return context, attention
 
 
 def test_pBLSTM():
@@ -122,9 +109,25 @@ def test_encoder():
 	key, value, len_y = pyr(x, len_x)
 	print(key.shape, value.shape)
 
+def test_bmmAttention():
+	# from dataloader import get_dataloader
+	# root = 'hw4p2_student_data/hw4p2_student_data'
+	# train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
+	# x,y,len_x, len_y = next(iter(train_loader))
+	key = torch.rand(32, 80, 128)
+	value = torch.rand(32, 80, 128)
+	query = torch.rand(32, 128)
+	mask = torch.zeros(32, 80, 1)
+	mask[:,40,:] = 1.
+	att = bmmAttention()
+	ctxt, att= att(query, key, value, mask)
+	print(ctxt.shape, att.shape)
+	
+
 
 
 
 if(__name__ == "__main__"):
 	# test_pBLSTM()
-	test_encoder()
+	#test_encoder()
+	test_bmmAttention()
