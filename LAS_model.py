@@ -165,9 +165,9 @@ class Decoder(nn.Module):
 		return predictions, attentions
 
 class Seq2Seq(nn.Module):
-	def __init__(self, input_dim, vocab_size, encoder_hidden_dim, decoder_hidden_dim, embed_dim, key_value_size=128):
+	def __init__(self, input_dim, vocab_size, encoder_hidden_dim, decoder_hidden_dim, embed_dim, key_value_size=128, num_layers=4):
 		super(Seq2Seq,self).__init__()
-		self.encoder = Encoder(input_dim, encoder_hidden_dim)
+		self.encoder = Encoder(input_dim, encoder_hidden_dim, num_layers = num_layers)
 		self.decoder = Decoder(vocab_size, decoder_hidden_dim, embed_dim ,key_value_size=128)
 	
 	def forward(self, x, x_len, y=None, mode='train'):
@@ -229,6 +229,7 @@ def test_seq2seq():
 	root = 'hw4p2_student_data/hw4p2_student_data'
 	train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
 	x,y,len_x, len_y = next(iter(train_loader))
+	print(x.shape[-1])
 	net = Seq2Seq(input_dim = x.shape[-1], encoder_hidden_dim = 256, decoder_hidden_dim = 256, vocab_size=30, embed_dim=128, key_value_size=128)
 	pred, att= net(x,len_x, y, "train")
 	print("Predictions: ",pred)
