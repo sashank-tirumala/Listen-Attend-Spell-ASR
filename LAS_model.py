@@ -76,16 +76,19 @@ class bmmAttention(nn.Module):
 		#TODO add normalize option
 		query=query.reshape(query.shape[0],-1,1)
 		# print("query: ", query.shape)
+		size = torch.tensor(key.shape[1], dtype=torch.float32)
 		energy  = torch.bmm(key, query) + 1e-9
+		energy = energy/torch.sqrt(size)
 		# print("energy: ", energy.shape)
-		energy = torch.mul(energy, mask) #TODO There is no scaling here unlike the bootcamp
+		energy.masked_fill(mask, torch.tensor(float("-inf"))) #TODO There is no scaling here unlike the bootcamp
 		attention = F.softmax(energy, dim=1) #Pretty sure it is right, but noting anyway
 		# print("attention: ",attention.shape)
 		# print("value: ",value.shape)
 		value = value.permute(0,2,1)
 		context = torch.bmm(value, attention)
-		context = context.reshape(context.shape[0], context.shape[1])
+		context = context[:,:,0]
 		# print("context: ", context.shape)
+		# from IPython import embed; embed()
 		return context, attention
 
 
@@ -122,11 +125,10 @@ class Decoder(nn.Module):
 		mask = []
 		for i in range(len(encoder_len)):
 			mask_temp = torch.arange(0, key.shape[1], dtype=torch.float32)
-			mask_temp = mask_temp.masked_fill(mask_temp<encoder_len[i], 1.0)
-			mask_temp = mask_temp.masked_fill(mask_temp>=encoder_len[i], torch.tensor(float("-inf")))
+			mask_temp = mask_temp< encoder_len[i]
 			mask.append(mask_temp)
 		mask = torch.stack(mask)
-		mask = mask.reshape(mask.shape[0], mask.shape[1], 1)
+		mask = mask.reshape(mask.shape[0], -1, 1)
 		predictions = []
 		prediction = torch.full((B,), fill_value = 0)
 
@@ -143,22 +145,35 @@ class Decoder(nn.Module):
 			else:
 				char_embed = self.embedding(predictions[-1])
 			context = torch.cat([char_embed, context], dim=1)
-			del char_embed
+			# del char_embed
 			hidden_states[0] = self.lstm1(context, hidden_states[0])
 			hidden_states[1] = self.lstm2(hidden_states[0][1], hidden_states[1])
 
 			query = self.query_linear(hidden_states[1][1])
-			context, attention = self.attention(query.reshape(query.shape[0], query.shape[1], 1), key, value, mask)
+			context, attention = self.attention(query, key, value, mask)
 			attention_plot.append(attention[0].detach().cpu())
 			output_context = torch.cat([context, query], dim=1)
-			del query
+			# del query
 			prediction = self.character_prob(output_context)
-			del output_context
+			if torch.isnan(prediction).any():
+				print(i)
+				from IPython import embed; embed()
+			# del output_context
 			predictions.append(prediction)		
 		attentions = torch.stack(attention_plot, dim=0)
 		predictions = torch.cat(predictions, dim=1)
 		return predictions, attentions
 
+class Seq2Seq(nn.Module):
+	def __init__(self, input_dim, vocab_size, encoder_hidden_dim, decoder_hidden_dim, embed_dim, key_value_size=128):
+		super(Seq2Seq,self).__init__()
+		self.encoder = Encoder(input_dim, encoder_hidden_dim)
+		self.decoder = Decoder(vocab_size, decoder_hidden_dim, embed_dim ,key_value_size=128)
+	
+	def forward(self, x, x_len, y=None, mode='train'):
+		key, value, encoder_len = self.encoder(x, x_len)
+		predictions, attentions = self.decoder(key, value, encoder_len, y=y, mode=mode)
+		return predictions
 
 def test_pBLSTM():
 	from dataloader import get_dataloader
@@ -201,14 +216,23 @@ def test_decoder():
 	train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
 	x,y,len_x, len_y = next(iter(train_loader))
 	pyr = Encoder(int(x.shape[-1]), 256)
+	print(x.shape[-1])
 	key, value, len_y = pyr(x, len_x)
 	print(key.dtype, value.dtype, len_y.dtype)
 	dec = Decoder(vocab_size = 30, decoder_hidden_dim=128, embed_dim=128, key_value_size=128)
 	pred, att = dec(key, value, len_y, y=y, mode='train')
-	print("predictions: ", pred.shape)
-	print("attention: ",att.shape)
+	print("predictions: ", pred)
+	print("attention: ",att)
 
-
+def test_seq2seq():
+	from dataloader import get_dataloader
+	root = 'hw4p2_student_data/hw4p2_student_data'
+	train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
+	x,y,len_x, len_y = next(iter(train_loader))
+	net = Seq2Seq(input_dim = x.shape[-1], encoder_hidden_dim = 256, decoder_hidden_dim = 256, vocab_size=30, embed_dim=128, key_value_size=128)
+	pred, att= net(x,len_x, y, "train")
+	print("Predictions: ",pred)
+	print("Attention: ",att)
 
 
 
@@ -216,4 +240,5 @@ if(__name__ == "__main__"):
 	# test_pBLSTM()
 	#test_encoder()
 	# test_bmmAttention()
-	test_decoder()
+	# test_decoder()
+	test_seq2seq()
