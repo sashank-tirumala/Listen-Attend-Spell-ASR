@@ -1,6 +1,5 @@
 import os
 import sys
-import pandas as pd
 import numpy as np
 # import Levenshtein as lev
 import torch
@@ -19,6 +18,7 @@ import datetime
 from torch.utils import data
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 import csv
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class pBLSTM(nn.Module):
 	def __init__(self, input_dim, hidden_dim):
@@ -61,7 +61,7 @@ class Encoder(nn.Module):
 		del out2, out3
 		out1 = self.pBLSTMs(out1)
 		out, lengths = pad_packed_sequence(out1)
-		print(out.shape)
+		# print(out.shape)
 		out = out.permute(1,0,2)
 		key = self.key_network(out)
 		value = self.value_network(out)
@@ -80,7 +80,7 @@ class bmmAttention(nn.Module):
 		energy  = torch.bmm(key, query) + 1e-9
 		energy = energy/torch.sqrt(size)
 		# print("energy: ", energy.shape)
-		energy.masked_fill(mask, torch.tensor(float("-inf"))) #TODO There is no scaling here unlike the bootcamp
+		energy = energy.masked_fill(mask, torch.tensor(float("-inf"))) #TODO There is no scaling here unlike the bootcamp
 		attention = F.softmax(energy, dim=1) #Pretty sure it is right, but noting anyway
 		# print("attention: ",attention.shape)
 		# print("value: ",value.shape)
@@ -125,9 +125,9 @@ class Decoder(nn.Module):
 		mask = []
 		for i in range(len(encoder_len)):
 			mask_temp = torch.arange(0, key.shape[1], dtype=torch.float32)
-			mask_temp = mask_temp< encoder_len[i]
+			mask_temp = mask_temp > encoder_len[i]
 			mask.append(mask_temp)
-		mask = torch.stack(mask)
+		mask = torch.stack(mask).to(device)
 		mask = mask.reshape(mask.shape[0], -1, 1)
 		predictions = []
 		prediction = torch.full((B,), fill_value = 0)
@@ -173,7 +173,7 @@ class Seq2Seq(nn.Module):
 	def forward(self, x, x_len, y=None, mode='train'):
 		key, value, encoder_len = self.encoder(x, x_len)
 		predictions, attentions = self.decoder(key, value, encoder_len, y=y, mode=mode)
-		return predictions
+		return predictions, attentions
 
 def test_pBLSTM():
 	from dataloader import get_dataloader
