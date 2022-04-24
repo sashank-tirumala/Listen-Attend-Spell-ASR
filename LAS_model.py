@@ -75,16 +75,17 @@ class bmmAttention(nn.Module):
 	def forward(self, query, key, value, mask):
 		#TODO add normalize option
 		query=query.reshape(query.shape[0],-1,1)
-		print("query: ", query.shape)
+		# print("query: ", query.shape)
 		energy  = torch.bmm(key, query) + 1e-9
-		print("energy: ", energy.shape)
-		energy = torch.mul(energy, mask)
+		# print("energy: ", energy.shape)
+		energy = torch.mul(energy, mask) #TODO There is no scaling here unlike the bootcamp
 		attention = F.softmax(energy, dim=1) #Pretty sure it is right, but noting anyway
-		print("attention: ",attention.shape)
-		print("value: ",value.shape)
+		# print("attention: ",attention.shape)
+		# print("value: ",value.shape)
 		value = value.permute(0,2,1)
 		context = torch.bmm(value, attention)
-		print("context: ", context.shape)
+		context = context.reshape(context.shape[0], context.shape[1])
+		# print("context: ", context.shape)
 		return context, attention
 
 
@@ -94,19 +95,18 @@ class Decoder(nn.Module):
 		#Be careful with padding_idx
 		self.embedding = nn.Embedding(num_embeddings = vocab_size, embedding_dim = embed_dim, padding_idx = 29)
 		#Might want to concatenate context here
-		self.lstm1 = nn.LSTMCell(embed_dim, hidden_size = decoder_hidden_dim, bias=True)
+		self.lstm1 = nn.LSTMCell(embed_dim+key_value_size, hidden_size = decoder_hidden_dim, bias=True)
 		self.lstm2 = nn.LSTMCell(decoder_hidden_dim, decoder_hidden_dim, bias=True)
 
 		self.attention = bmmAttention()
 		self.query_linear = nn.Linear(in_features = decoder_hidden_dim, out_features = key_value_size)
 		self.vocab_size = vocab_size
 		
-		#Optional Weight Tying
-		self.character_prob = nn.Linear(in_features = key_value_size, out_features = vocab_size, bias=True)
+		self.character_prob = nn.Linear(in_features = key_value_size+embed_dim, out_features = vocab_size, bias=True)
 		self.key_value_size = key_value_size
 
-		#Weight Tying
-		self.character_prob.weight = self.embedding.weight
+		#Optional Weight Tying
+		# self.character_prob.weight = self.embedding.weight
 
 	def forward(self, key , value, encoder_len, y=None, mode='train'):
 		B, key_seq_max_len, key_value_size = key.shape
@@ -119,13 +119,45 @@ class Decoder(nn.Module):
 			max_len=600
 		
 		#Creating the attention mask here:
-		mask = torch.zeros(key.shape[0],key.shape[1],1)
-		from IPython import embed; embed()
+		mask = []
+		for i in range(len(encoder_len)):
+			mask_temp = torch.arange(0, key.shape[1], dtype=torch.float32)
+			mask_temp = mask_temp.masked_fill(mask_temp<encoder_len[i], 1.0)
+			mask_temp = mask_temp.masked_fill(mask_temp>=encoder_len[i], torch.tensor(float("-inf")))
+			mask.append(mask_temp)
+		mask = torch.stack(mask)
+		mask = mask.reshape(mask.shape[0], mask.shape[1], 1)
+		predictions = []
+		prediction = torch.full((B,), fill_value = 0)
 
+		hidden_states = [None, None]
+		attention_plot = []
+		#TODO Initialize the context
+		context = value.permute(0,2,1).mean(dim=-1)
+		for i in range(max_len):
+			if mode == 'train':
+				if i == 0:
+					char_embed = self.embedding(y[:,0])
+				else:
+					char_embed = self.embedding(y[:,i])
+			else:
+				char_embed = self.embedding(predictions[-1])
+			context = torch.cat([char_embed, context], dim=1)
+			del char_embed
+			hidden_states[0] = self.lstm1(context, hidden_states[0])
+			hidden_states[1] = self.lstm2(hidden_states[0][1], hidden_states[1])
 
-
-
-		pass
+			query = self.query_linear(hidden_states[1][1])
+			context, attention = self.attention(query.reshape(query.shape[0], query.shape[1], 1), key, value, mask)
+			attention_plot.append(attention[0].detach().cpu())
+			output_context = torch.cat([context, query], dim=1)
+			del query
+			prediction = self.character_prob(output_context)
+			del output_context
+			predictions.append(prediction)		
+		attentions = torch.stack(attention_plot, dim=0)
+		predictions = torch.cat(predictions, dim=1)
+		return predictions, attentions
 
 
 def test_pBLSTM():
@@ -170,8 +202,11 @@ def test_decoder():
 	x,y,len_x, len_y = next(iter(train_loader))
 	pyr = Encoder(int(x.shape[-1]), 256)
 	key, value, len_y = pyr(x, len_x)
+	print(key.dtype, value.dtype, len_y.dtype)
 	dec = Decoder(vocab_size = 30, decoder_hidden_dim=128, embed_dim=128, key_value_size=128)
-	dec(key, value, len_y, y=y, mode='train')
+	pred, att = dec(key, value, len_y, y=y, mode='train')
+	print("predictions: ", pred.shape)
+	print("attention: ",att.shape)
 
 
 
