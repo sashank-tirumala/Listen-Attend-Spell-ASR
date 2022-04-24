@@ -88,6 +88,46 @@ class bmmAttention(nn.Module):
 		return context, attention
 
 
+class Decoder(nn.Module):
+	def __init__(self, vocab_size, decoder_hidden_dim, embed_dim ,key_value_size=128):
+		super(Decoder, self).__init__()
+		#Be careful with padding_idx
+		self.embedding = nn.Embedding(num_embeddings = vocab_size, embedding_dim = embed_dim, padding_idx = 29)
+		#Might want to concatenate context here
+		self.lstm1 = nn.LSTMCell(embed_dim, hidden_size = decoder_hidden_dim, bias=True)
+		self.lstm2 = nn.LSTMCell(decoder_hidden_dim, decoder_hidden_dim, bias=True)
+
+		self.attention = bmmAttention()
+		self.query_linear = nn.Linear(in_features = decoder_hidden_dim, out_features = key_value_size)
+		self.vocab_size = vocab_size
+		
+		#Optional Weight Tying
+		self.character_prob = nn.Linear(in_features = key_value_size, out_features = vocab_size, bias=True)
+		self.key_value_size = key_value_size
+
+		#Weight Tying
+		self.character_prob.weight = self.embedding.weight
+
+	def forward(self, key , value, encoder_len, y=None, mode='train'):
+		B, key_seq_max_len, key_value_size = key.shape
+		if mode == 'train':
+			y = y.permute(1,0)
+			max_len = y.shape[1]
+			char_embeddings = self.embedding(y)
+		else:
+			y = y.permute(1,0)
+			max_len=600
+		
+		#Creating the attention mask here:
+		mask = torch.zeros(key.shape[0],key.shape[1],1)
+		from IPython import embed; embed()
+
+
+
+
+		pass
+
+
 def test_pBLSTM():
 	from dataloader import get_dataloader
 	root = 'hw4p2_student_data/hw4p2_student_data'
@@ -122,7 +162,17 @@ def test_bmmAttention():
 	att = bmmAttention()
 	ctxt, att= att(query, key, value, mask)
 	print(ctxt.shape, att.shape)
-	
+
+def test_decoder():
+	from dataloader import get_dataloader
+	root = 'hw4p2_student_data/hw4p2_student_data'
+	train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
+	x,y,len_x, len_y = next(iter(train_loader))
+	pyr = Encoder(int(x.shape[-1]), 256)
+	key, value, len_y = pyr(x, len_x)
+	dec = Decoder(vocab_size = 30, decoder_hidden_dim=128, embed_dim=128, key_value_size=128)
+	dec(key, value, len_y, y=y, mode='train')
+
 
 
 
@@ -130,4 +180,5 @@ def test_bmmAttention():
 if(__name__ == "__main__"):
 	# test_pBLSTM()
 	#test_encoder()
-	test_bmmAttention()
+	# test_bmmAttention()
+	test_decoder()
