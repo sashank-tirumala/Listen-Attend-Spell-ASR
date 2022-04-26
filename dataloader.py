@@ -38,7 +38,7 @@ def create_dictionaries(letter_list):
     return letter2index, index2letter
     
 #Don't know what he wants right  now and why, will figure out
-def transform_index_to_letter(batch_indices, lindex2letter):
+def transform_index_to_letter(y, i2l, strip_start_and_end = True):
     '''
     Transforms numerical index input to string output by converting each index 
     to its corresponding letter from LETTER_LIST
@@ -50,9 +50,15 @@ def transform_index_to_letter(batch_indices, lindex2letter):
         transcripts: List of converted string transcripts. This would be a list with a length of N
     '''
     transcripts = []
-    # TODO
+    lengths, B = y.shape
+    for i in range(B):
+        target_str = "".join(i2l[int(x)] for x in y[1:,i])
+        target_str = target_str.split("<eos>")[0]
+
+        if not strip_start_and_end:
+            target_str = "<sos>"+target_str+"<eos>"
+        transcripts.append(target_str)
     return transcripts
-        
 # Create the letter2index and index2letter dictionary
 # letter2index, index2letter = create_dictionaries(LETTER_LIST)
 class LibriSamples(torch.utils.data.Dataset):
@@ -78,6 +84,7 @@ class LibriSamples(torch.utils.data.Dataset):
         # x = torch.nn.functional.normalize(input, p=2.0, dim = 1) #Maybe I need to add this
         y_s = np.load(self.y_dir+"/"+ydir)
         y = torch.tensor([self.letter2index[x] for x in y_s])
+
         return x,y
 
     def collate_fn(self,batch):
@@ -152,6 +159,7 @@ class LibriSamplesSimple:
     def __getitem__(self, ind):
         x = torch.tensor(self.X[ind])
         y_s = self.Y[ind]
+        y_s = y_s[1:-1]
         y = torch.tensor([self.letter2index[x] for x in y_s])
         return x,y
 
@@ -189,7 +197,19 @@ def test_simple_dataloader():
     print("Train dataset samples = {}, batches = {}".format(train_data.__len__(), len(train_loader)))
     print("Val dataset samples = {}, batches = {}".format(val_data.__len__(), len(val_loader)))
     pass
+
+def testi2l():
+    root = 'hw4p2_student_data/hw4p2_student_data'
+    bs=2
+    train_loader, val_loader, test_loader = get_dataloader(root, batch_size=bs)
+    LETTER_LIST = ['<sos>', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', \
+         'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', "'", ' ', '<eos>']
+    l2i, i2l = create_dictionaries(LETTER_LIST)
+    x, y, len_x, len_y = next(iter(val_loader))
+    ts = transform_index_to_letter(y, i2l)
+    print(ts)
 if(__name__ == "__main__"):
     # test_dataloaders()
-    test_simple_dataloader()
+    # test_simple_dataloader()
+    testi2l()
     
