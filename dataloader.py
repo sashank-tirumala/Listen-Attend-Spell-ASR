@@ -75,6 +75,7 @@ class LibriSamples(torch.utils.data.Dataset):
     def __getitem__(self, ind):
         xdir ,ydir = self.files[ind]
         x = torch.tensor(np.load(self.x_dir+"/"+xdir))
+        # x = torch.nn.functional.normalize(input, p=2.0, dim = 1) #Maybe I need to add this
         y_s = np.load(self.y_dir+"/"+ydir)
         y = torch.tensor([self.letter2index[x] for x in y_s])
         return x,y
@@ -133,9 +134,62 @@ def get_dataloader(root, batch_size=64, num_workers=4):
     train_data = LibriSamples(root, l2i, 'train')
     val_data = LibriSamples(root, l2i, 'dev')
     test_data = LibriSamplesTest(root, "test_order.csv")
-    train_loader = DataLoader(train_data, num_workers=num_workers, batch_size = batch_size, collate_fn=train_data.collate_fn)
-    val_loader = DataLoader(val_data, num_workers=num_workers, batch_size = batch_size, collate_fn=val_data.collate_fn)
+    train_loader = DataLoader(train_data, num_workers=num_workers, batch_size = batch_size, collate_fn=train_data.collate_fn, drop_last=True)
+    val_loader = DataLoader(val_data, num_workers=num_workers, batch_size = batch_size, collate_fn=val_data.collate_fn, drop_last=True)
     test_loader = DataLoader(test_data, num_workers=num_workers, batch_size = batch_size, collate_fn=test_data.collate_fn)
     return train_loader, val_loader, test_loader
+
+class LibriSamplesSimple:
+    def __init__(self, data_path, letter2index, partition= "train", shuffle=True):
+        self.X = np.load(data_path+"/"+partition+".npy", allow_pickle=True)
+        self.Y = np.load(data_path+"/"+partition+"_transcripts.npy", allow_pickle=True)
+        self.letter2index = letter2index
+
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, ind):
+        x = torch.tensor(self.X[ind])
+        y_s = self.Y[ind]
+        y = torch.tensor([self.letter2index[x] for x in y_s])
+        return x,y
+
+    def collate_fn(self,batch):
+        x_batch = [x for x,y in batch]
+        y_batch = [y for x,y in batch]
+        batch_x_pad = pad_sequence(x_batch)
+        lengths_x = [len(x) for x in x_batch]
+
+        batch_y_pad = pad_sequence(y_batch) 
+        lengths_y = [len(y) for y in y_batch]
+
+        return batch_x_pad, batch_y_pad, torch.tensor(lengths_x), torch.tensor(lengths_y)
+
+def get_simple_dataloader(root, batch_size, num_workers=4):
+    LETTER_LIST = ['<sos>', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', \
+         'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', "'", ' ', '<eos>']
+    l2i, i2l = create_dictionaries(LETTER_LIST)
+    train_data = LibriSamplesSimple(data_path = root, letter2index = l2i)
+    val_data = LibriSamplesSimple(data_path = root, letter2index = l2i, partition="dev")
+    train_loader = DataLoader(train_data, num_workers=num_workers, batch_size = batch_size, collate_fn=train_data.collate_fn, drop_last=True)
+    val_loader = DataLoader(val_data, num_workers=num_workers, batch_size = batch_size, collate_fn=val_data.collate_fn, drop_last=True)
+    return train_loader, val_loader
+
+def test_simple_dataloader():
+    root = '/home/sashank/Courses/11785_HW4_P2/hw4p2_simple/hw4p2_simple'
+    bs=64
+    train_loader, val_loader = get_simple_dataloader(root, batch_size=bs)
+    LETTER_LIST = ['<sos>', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', \
+         'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', "'", ' ', '<eos>']
+    l2i, i2l = create_dictionaries(LETTER_LIST)
+    train_data = LibriSamplesSimple(root, l2i, 'train')
+    val_data = LibriSamplesSimple(root, l2i, 'dev')
+    print("Batch size: ", bs)
+    print("Train dataset samples = {}, batches = {}".format(train_data.__len__(), len(train_loader)))
+    print("Val dataset samples = {}, batches = {}".format(val_data.__len__(), len(val_loader)))
+    pass
 if(__name__ == "__main__"):
-    test_dataloaders()
+    # test_dataloaders()
+    test_simple_dataloader()
+    
