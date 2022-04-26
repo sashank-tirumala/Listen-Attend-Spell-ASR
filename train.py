@@ -74,18 +74,24 @@ def train(cfg):
 			scheduler.step() # We told scheduler T_max that we'd call step() (len(train_loader) * epochs) many times.
 			break
 		plot_attention(attentions)
-		val(model, val_loader)
+		dist = val(model, val_loader)
 		break
+	print(dist)
 
 def val(model, val_loader):
 	model.eval()
 	l2i, i2l = create_dictionaries(LETTER_LIST)
 	dists = []
+	print("len: ", len(val_loader))
 	for i, data in enumerate(val_loader):
 		x, y, lx, ly = data
 		x = x.cuda()
 		y = y.cuda()
+		# print("x lx y")
+		# print(x.shape, lx.shape, y.shape)
 		predictions, attentions = model(x, lx, y, mode="train")
+		#print("pred att")
+		# print(i)
 		mask = []
 		for i in range(len(ly)):
 			mask_temp = torch.arange(0, predictions.shape[1], dtype=torch.float32)
@@ -98,7 +104,7 @@ def val(model, val_loader):
 		greedy_pred = torch.max(predictions, dim=2)[1]
 		dists.append(get_dist(greedy_pred, y))
 	dists = np.array(dists)
-	return np.mean(dists), np.mean()
+	return np.mean(dists)
 
 
 def get_dist(greedy_pred, y):
@@ -109,7 +115,6 @@ def get_dist(greedy_pred, y):
 		target_str = target_str.split('<eos>')[0][:]
 		pred_str = pred_str.split('<eos>')[0][:]
 		dist = dist + lev(target_str, pred_str)
-	from IPython import embed; embed()
 	return dist/y.shape[1]
 
 if(__name__ == "__main__"):

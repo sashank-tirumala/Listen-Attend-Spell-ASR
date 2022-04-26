@@ -31,10 +31,9 @@ class pBLSTM(nn.Module):
 		x, len_x  = pad_packed_sequence(inp)
 		if(x.shape[0]%2 == 1):
 			x = x[:-1, :, :]
-			len_x[len_x.argmax()] -= 1
 		for i in range(len_x.shape[0]):
 			if(len_x[i]%2 == 1):
-				len_x[i] +=1
+				len_x[i] -=1
 		len_x = len_x/2
 		x = x.permute(1,0,2)
 		x = x.reshape((x.shape[0], int(x.shape[1]/2), x.shape[2]*2))
@@ -56,11 +55,14 @@ class Encoder(nn.Module):
 		self.value_network = nn.Linear(in_features = encoder_hidden_dim*2,out_features = 128)
 
 	def forward(self, x, len_x):
-		packed_input = pack_padded_sequence(x,len_x, enforce_sorted=False)
+		packed_input = pack_padded_sequence(x,len_x, enforce_sorted=False, batch_first=False)
 		out1, (out2, out3) = self.lstm(packed_input)
 		del out2, out3
 		out1 = self.pBLSTMs(out1)
-		out, lengths = pad_packed_sequence(out1)
+		try:
+			out, lengths = pad_packed_sequence(out1,  batch_first=False)
+		except:
+			from IPython import embed; embed()
 		# print(out.shape)
 		out = out.permute(1,0,2)
 		key = self.key_network(out)
@@ -73,14 +75,15 @@ class bmmAttention(nn.Module):
 		# Optional: dropout
 
 	def forward(self, query, key, value, mask):
+		# from IPython import embed; embed()
 		#TODO add normalize option
 		query=query.reshape(query.shape[0],-1,1)
 		# print("query: ", query.shape)
-		size = torch.tensor(key.shape[1], dtype=torch.float32)
+		size = torch.tensor(key.shape[1], dtype=torch.float32).to(device)
 		energy  = torch.bmm(key, query) + 1e-9
 		energy = energy/torch.sqrt(size)
 		# print("energy: ", energy.shape)
-		energy = energy.masked_fill(mask, torch.tensor(float("-inf"))) #TODO There is no scaling here unlike the bootcamp
+		energy = energy.masked_fill(mask, torch.tensor(float("-inf"))) 
 		attention = F.softmax(energy, dim=1) #Pretty sure it is right, but noting anyway
 		# print("attention: ",attention.shape)
 		# print("value: ",value.shape)
@@ -125,10 +128,15 @@ class Decoder(nn.Module):
 		#Creating the attention mask here:
 		mask = []
 		for i in range(len(encoder_len)):
-			mask_temp = torch.arange(0, key.shape[1], dtype=torch.float32)
+			mask_temp = torch.arange(0, key.shape[1], dtype=torch.float32).to(device)
 			mask_temp = mask_temp > encoder_len[i]
 			mask.append(mask_temp)
+		# print(mask)
+		# print(encoder_len)
 		mask = torch.stack(mask).to(device)
+		# print(mask.shape)
+		# mask = torch.stack(mask) #TODO comment out, just checking for now
+		# print(mask.shape)
 		mask = mask.reshape(mask.shape[0], -1, 1)
 		predictions = []
 		# prediction = torch.full((B,self.vocab_size), fill_value = 0).to(device)
@@ -137,6 +145,7 @@ class Decoder(nn.Module):
 		attention_plot = []
 		#TODO Initialize the context
 		context = value.permute(0,2,1).mean(dim=-1)
+		# from IPython import embed; embed()
 		for i in range(max_len):
 			if mode == 'train':
 				if i == 0:
@@ -152,6 +161,7 @@ class Decoder(nn.Module):
 
 			query = self.query_linear(hidden_states[1][1])
 			context, attention = self.attention(query, key, value, mask)
+			# print(i, attention.shape)
 			attention_plot.append(attention[0].detach().cpu())
 			output_context = torch.cat([context, query], dim=1)
 			# del query
@@ -190,23 +200,24 @@ def test_pBLSTM():
 def test_encoder():
 	from dataloader import get_dataloader
 	root = 'hw4p2_student_data/hw4p2_student_data'
-	train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
+	train_loader, val_loader, test_loader = get_dataloader(root, batch_size=64)
 	x,y,len_x, len_y = next(iter(train_loader))
-	pyr = Encoder(int(x.shape[-1]), 256)
+	x = x.cuda()
+	y = y.cuda()
+	pyr = Encoder(int(x.shape[-1]), 256).to(device)
 	print(x.shape)
 	key, value, len_y = pyr(x, len_x)
 	print(key.shape, value.shape)
 
 def test_bmmAttention():
-	# from dataloader import get_dataloader
-	# root = 'hw4p2_student_data/hw4p2_student_data'
-	# train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
-	# x,y,len_x, len_y = next(iter(train_loader))
-	key = torch.rand(32, 80, 128)
-	value = torch.rand(32, 80, 128)
-	query = torch.rand(32, 128)
-	mask = torch.zeros(32, 80, 1)
-	mask[:,40,:] = 1.
+	from dataloader import get_dataloader
+	root = 'hw4p2_student_data/hw4p2_student_data'
+	train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
+	x,y,len_x, len_y = next(iter(train_loader))
+	x = x.cuda()
+	y = y.cuda()
+	pyr = Encoder(int(x.shape[-1]), 256).to(device)
+	key, value, len_y = pyr(x, len_x)
 	att = bmmAttention()
 	ctxt, att= att(query, key, value, mask)
 	print(ctxt.shape, att.shape)
@@ -216,11 +227,15 @@ def test_decoder():
 	root = 'hw4p2_student_data/hw4p2_student_data'
 	train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
 	x,y,len_x, len_y = next(iter(train_loader))
-	pyr = Encoder(int(x.shape[-1]), 256)
+	x = x.cuda()
+	y = y.cuda()
+	# len_x = len_x.cuda()
+	# len_y = len_y.cuda()
+	pyr = Encoder(int(x.shape[-1]), 256).to(device)
 	print(x.shape[-1])
 	key, value, len_y = pyr(x, len_x)
 	print(key.dtype, value.dtype, len_y.dtype)
-	dec = Decoder(vocab_size = 30, decoder_hidden_dim=128, embed_dim=128, key_value_size=128)
+	dec = Decoder(vocab_size = 30, decoder_hidden_dim=128, embed_dim=128, key_value_size=128).to(device)
 	pred, att = dec(key, value, len_y, y=y, mode='train')
 	print("predictions: ", pred)
 	print("attention: ",att)
@@ -229,18 +244,21 @@ def test_seq2seq():
 	from dataloader import get_dataloader
 	root = 'hw4p2_student_data/hw4p2_student_data'
 	train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
-	x,y,len_x, len_y = next(iter(train_loader))
+	x,y,len_x, len_y = next(iter(val_loader))
+	x = x.cuda()
+	y = y.cuda()
+	print(x.shape)
 	print(x.shape[-1])
-	net = Seq2Seq(input_dim = x.shape[-1], encoder_hidden_dim = 256, decoder_hidden_dim = 256, vocab_size=30, embed_dim=128, key_value_size=128)
+	net = Seq2Seq(input_dim = x.shape[-1], encoder_hidden_dim = 256, decoder_hidden_dim = 256, vocab_size=30, embed_dim=128, key_value_size=128).to(device)
 	pred, att= net(x,len_x, y, "train")
-	print("Predictions: ",pred)
-	print("Attention: ",att)
+	print("Predictions: ",pred.shape)
+	print("Attention: ",att.shape)
 
 
 
 if(__name__ == "__main__"):
 	# test_pBLSTM()
-	#test_encoder()
+	# test_encoder()
 	# test_bmmAttention()
 	# test_decoder()
 	test_seq2seq()
