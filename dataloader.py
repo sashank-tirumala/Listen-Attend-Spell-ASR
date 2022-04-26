@@ -18,6 +18,8 @@ import datetime
 from torch.utils import data
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 import csv
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 def create_dictionaries(letter_list):
     '''
     Create dictionaries for letter2index and index2letter transformations
@@ -209,7 +211,24 @@ def testi2l():
     l2i, i2l = create_dictionaries(LETTER_LIST)
     x, y, len_x, len_y = next(iter(val_loader))
     ts = transform_index_to_letter(y, i2l)
-    print(ts)
+    print(len_y)
+    mask = generate_mask(len_y)
+    print(mask)
+    # print(ts)
+
+def generate_mask(lens):
+    """
+    Generates a mask, not sure if this mask will be used in attention yet. In
+    Training it should be used
+    """
+    lens = torch.tensor(lens).to(device)
+    max_len = torch.max(lens)
+    masks=[]
+    for i in range(lens.shape[0]):
+        mask_temp = (torch.arange(0, max_len).to(device) < lens[i]).int()
+        masks.append(mask_temp)
+    masks = torch.stack(masks, dim=0)
+    return masks
 if(__name__ == "__main__"):
     # test_dataloaders()
     # test_simple_dataloader()
