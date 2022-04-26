@@ -52,7 +52,7 @@ def transform_index_to_letter(y, i2l, strip_start_and_end = True):
     transcripts = []
     lengths, B = y.shape
     for i in range(B):
-        target_str = "".join(i2l[int(x)] for x in y[1:,i])
+        target_str = "".join(i2l[int(x)] for x in y[:,i])
         target_str = target_str.split("<eos>")[0]
 
         if not strip_start_and_end:
@@ -93,8 +93,10 @@ class LibriSamples(torch.utils.data.Dataset):
         batch_x_pad = pad_sequence(x_batch)
         lengths_x = [len(x) for x in x_batch]
 
-        batch_y_pad = pad_sequence(y_batch) 
-        lengths_y = [len(y) for y in y_batch]
+        batch_y_pad = pad_sequence(y_batch)
+        #Shifting y by one step forward
+        batch_y_pad=batch_y_pad[1:, :]
+        lengths_y = [len(y)-1 for y in y_batch]
 
         return batch_x_pad, batch_y_pad, torch.tensor(lengths_x), torch.tensor(lengths_y)
 
