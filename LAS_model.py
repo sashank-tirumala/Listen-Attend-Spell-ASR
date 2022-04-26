@@ -87,6 +87,7 @@ class bmmAttention(nn.Module):
 		value = value.permute(0,2,1)
 		context = torch.bmm(value, attention)
 		context = context[:,:,0]
+		attention = attention[:,:,0]
 		# print("context: ", context.shape)
 		# from IPython import embed; embed()
 		return context, attention
@@ -130,8 +131,8 @@ class Decoder(nn.Module):
 		mask = torch.stack(mask).to(device)
 		mask = mask.reshape(mask.shape[0], -1, 1)
 		predictions = []
-		prediction = torch.full((B,), fill_value = 0)
-
+		# prediction = torch.full((B,self.vocab_size), fill_value = 0).to(device)
+		# predictions.append(prediction)
 		hidden_states = [None, None]
 		attention_plot = []
 		#TODO Initialize the context
