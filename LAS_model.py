@@ -80,8 +80,9 @@ class bmmAttention(nn.Module):
         # print("query: ", query.shape)
         # from IPython import embed; embed()
         # size = torch.tensor(key.shape[1], dtype=torch.float32).to(device)
-        #TODO Mask Energy
+        #TODO Mask Energy -- Mask might be wrong, mostly correct though
         energy = torch.bmm(key, query.unsqueeze(2)).squeeze(2)
+        energy.masked_fill_(mask, torch.tensor(float("-inf")))
         # print("energy: ", energy.shape)
         attention = F.softmax(energy, dim= - 1) #Pretty sure it is right, but noting anyway
         # print("attention: ",attention.shape)
@@ -258,5 +259,5 @@ if(__name__ == "__main__"):
     # test_pBLSTM()
     # test_encoder()
     # test_bmmAttention()
-    test_decoder()
-    # test_seq2seq()
+    # test_decoder()
+    test_seq2seq()
