@@ -156,9 +156,9 @@ class Decoder(nn.Module):
                     else:
                         char_embed = char_embeddings[:, i-1, :]
                 else:
-                    char_embed = self.embedding(softmax(prediction).argmax(dim=-1))
+                    char_embed = self.embedding(F.softmax(prediction).argmax(dim=-1))
             else:
-                char_embed = self.embedding(softmax(prediction).argmax(dim=-1))
+                char_embed = self.embedding(F.softmax(prediction).argmax(dim=-1))
             y_context = torch.cat([char_embed, context], dim=1)
             y_context = self.locked_dropouts[0](y_context.unsqueeze(1)).squeeze(1)
             hidden_states[0] = self.lstms[0](y_context, hidden_states[0])
