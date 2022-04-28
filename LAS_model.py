@@ -27,19 +27,12 @@ class pBLSTM(nn.Module):
 
 
     def forward(self, inp):
-        # from IPython import embed; embed()
-        x, len_x  = pad_packed_sequence(inp)
-        if(x.shape[0]%2 == 1):
-            x = x[:-1, :, :]
-        for i in range(len_x.shape[0]):
-            if(len_x[i]%2 == 1):
-                len_x[i] -=1
-        len_x = len_x/2
-        x = x.permute(1,0,2)
-        x = x.reshape((x.shape[0], int(x.shape[1]/2), x.shape[2]*2))
-        # from IPython import embed; embed()
-        x = x.permute(1,0,2)
-        packed_input = pack_padded_sequence(x,len_x, enforce_sorted=False)
+        x, len_x  = pad_packed_sequence(inp, batch_first=True)
+        if(x.shape[1]%2 == 1):
+            x = x[:, :-1, :]
+        len_x = torch.div(len_x, 2, rounding_mode='floor')
+        x = x.view(x.shape[0], int(x.shape[1]/2), x.shape[2]*2)
+        packed_input = pack_padded_sequence(x,len_x, enforce_sorted=False, batch_first=True)
         del x, len_x
         out1, (out2, out3) = self.blstm(packed_input)
         return out1
@@ -51,13 +44,13 @@ class Encoder(nn.Module):
         #TODO add DropOut Below, maybe add more layers
         self.pBLSTMs = nn.ModuleList([pBLSTM(input_dim = encoder_hidden_dim*2, hidden_dim = encoder_hidden_dim)]*num_layers)
         self.pBLSTMs = nn.Sequential(*self.pBLSTMs)
-        self.key_network = nn.Linear(in_features = encoder_hidden_dim*2, out_features = 128)
-        self.value_network = nn.Linear(in_features = encoder_hidden_dim*2,out_features = 128)
+        self.key_network = nn.Linear(in_features = encoder_hidden_dim*2, out_features = key_value_size)
+        self.value_network = nn.Linear(in_features = encoder_hidden_dim*2,out_features = key_value_size)
 
     def forward(self, x, len_x):
         packed_input = pack_padded_sequence(x,len_x, enforce_sorted=False, batch_first=True)
         out1, (out2, out3) = self.lstm(packed_input)
-        # out1 = self.pBLSTMs(out1)
+        out1 = self.pBLSTMs(out1)
         out, lengths = pad_packed_sequence(out1,  batch_first=True)
         key = self.key_network(out)
         value = self.value_network(out)
@@ -69,16 +62,23 @@ class bmmAttention(nn.Module):
         # Optional: dropout
 
     def forward(self, query, key, value, mask):
-        # from IPython import embed; embed()
-        #TODO add normalize option
-        # print("query: ", query.shape)
-        # from IPython import embed; embed()
-        # size = torch.tensor(key.shape[1], dtype=torch.float32).to(device)
-        #TODO Mask Energy -- Mask might be wrong, mostly correct though
-        energy = torch.bmm(key, query.unsqueeze(2)).squeeze(2)
-        # energy.masked_fill_(mask, torch.tensor(float("-inf")))
+        energy = torch.bmm(key, query.unsqueeze(2)).squeeze(2)/torch.sqrt(torch.tensor(key.shape[-1]).to(device))
+        energy.masked_fill_(mask, torch.tensor(float("-inf")))
+        attention = F.softmax(energy, dim= 1) #Pretty sure it is right, but noting anyway
+        context = torch.bmm(attention.unsqueeze(1), value).squeeze(1)
+        return context, attention
+
+class multiheadAttention(nn.Module):
+    def __init__(self, normalize = False):
+        super(bmmAttention, self).__init__()
+        # Optional: dropout
+
+    def forward(self, query, key, value, mask):
+        
+        energy = torch.bmm(key, query.unsqueeze(2)).squeeze(2)/torch.sqrt(torch.tensor(key.shape[-1]).to(device))
+        energy.masked_fill_(mask, torch.tensor(float("-inf")))
         # print("energy: ", energy.shape)
-        attention = F.softmax(energy, dim= - 1) #Pretty sure it is right, but noting anyway
+        attention = F.softmax(energy, dim= 1) #Pretty sure it is right, but noting anyway
         # print("attention: ",attention.shape)
         # print("value: ",value.shape)
         context = torch.bmm(attention.unsqueeze(1), value).squeeze(1)
@@ -86,33 +86,34 @@ class bmmAttention(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, vocab_size, decoder_hidden_dim, embed_dim ,key_value_size=128):
+    def __init__(self, vocab_size, decoder_hidden_dim, embed_dim ,key_value_size=128, num_decoder_layers=2, attention_type="single"):
         super(Decoder, self).__init__()
         #Be careful with padding_idx
+        embed_dim = 2*key_value_size #Needed for weight tying
         self.embedding = nn.Embedding(num_embeddings = vocab_size, embedding_dim = embed_dim, padding_idx = 0)
         #Might want to concatenate context here
-        self.lstm1 = nn.LSTMCell(embed_dim+key_value_size, hidden_size = key_value_size)
-        # self.lstm2 = nn.LSTMCell(decoder_hidden_dim, decoder_hidden_dim, bias=True) TODO UNCOMMENT when basic attention done
-
-        self.attention = bmmAttention()
-        # self.query_linear = nn.Linear(in_features = decoder_hidden_dim, out_features = key_value_size) #Might not be needed
+        self.lstms = nn.ModuleList([])
+        self.lstms.append(nn.LSTMCell(embed_dim+key_value_size, hidden_size = decoder_hidden_dim))
+        for i in range(0, num_decoder_layers-2):
+            self.lstms.append(nn.LSTMCell(decoder_hidden_dim, hidden_size = decoder_hidden_dim))
+        self.lstms.append(nn.LSTMCell(decoder_hidden_dim, hidden_size = key_value_size))
+        if(attention_type=="single"):
+            self.attention = bmmAttention()
         self.vocab_size = vocab_size
         
         self.character_prob = nn.Linear(in_features = key_value_size*2, out_features = vocab_size)
         self.key_value_size = key_value_size
+        self.num_layers = num_decoder_layers
 
         #Optional Weight Tying
-        print(self.character_prob.weight.shape, self.embedding.weight.shape)
         self.character_prob.weight = self.embedding.weight #
 
     def forward(self, key , value, encoder_len, y=None, mode='train', teacher_forcing=True):
         B, key_seq_max_len, key_value_size = key.shape
         if mode == 'train':
-            # y = y.permute(1,0)
             max_len = y.shape[1]
             char_embeddings = self.embedding(y)
         else:
-            # y = y.permute(1,0)
             max_len=600
         
         #Creating the attention mask here:
@@ -121,12 +122,11 @@ class Decoder(nn.Module):
         #TODO Initialize the context
         predictions = []
         prediction = torch.full((B,1), fill_value=0, device=device)
-        hidden_states = [None, None]
+        hidden_states = [None]*self.num_layers
         prediction = torch.zeros(B, 1).to(device)
         context = value[:, 0, :] #initializing context with the first value
         context = context.to(device)
         attention_plot=[]
-        # from IPython import embed; embed()
         for i in range(max_len):
             if mode == 'train':
                 if teacher_forcing:
@@ -139,27 +139,24 @@ class Decoder(nn.Module):
             else:
                 char_embed = self.embedding(softmax(prediction).argmax(dim=-1))
             y_context = torch.cat([char_embed, context], dim=1)
-            hidden_states[0] = self.lstm1(y_context, hidden_states[0])
-            # hidden_states[1] = self.lstm2(hidden_states[0][0], hidden_states[1])
-
-            query =  hidden_states[0][0] #TODO change with multilayers
+            hidden_states[0] = self.lstms[0](y_context, hidden_states[0])
+            for i in range(1, self.num_layers):
+                hidden_states[i] = self.lstms[i](hidden_states[i-1][i-1], hidden_states[i])
+            query =  hidden_states[-1][0]
             context, attention = self.attention(query, key, value, mask)
-            # print(i, attention.shape)
             attention_plot.append(attention[0].detach().cpu())
             output_context = torch.cat([query, context], dim=1)
-            # del query
             prediction = self.character_prob(output_context)
-            #Checking if any major errors were made
             predictions.append(prediction.unsqueeze(1))		
         attentions = torch.stack(attention_plot, dim=0)
         predictions = torch.cat(predictions, dim=1)
         return predictions, attentions
 
 class Seq2Seq(nn.Module):
-    def __init__(self, input_dim, vocab_size, encoder_hidden_dim, decoder_hidden_dim, embed_dim, key_value_size=128, num_layers=4):
+    def __init__(self, input_dim, vocab_size, encoder_hidden_dim, decoder_hidden_dim, embed_dim, key_value_size=128, num_layers=4, num_decoder_layers=2, attention="single"):
         super(Seq2Seq,self).__init__()
         self.encoder = Encoder(input_dim, encoder_hidden_dim, num_layers = num_layers)
-        self.decoder = Decoder(vocab_size, decoder_hidden_dim, embed_dim ,key_value_size=128)
+        self.decoder = Decoder(vocab_size, decoder_hidden_dim, embed_dim ,key_value_size=128, num_decoder_layers=num_decoder_layers, attention_type="single")
     
     def forward(self, x, x_len, y=None, mode='train', teacher_forcing=True):
         key, value, encoder_len = self.encoder(x, x_len)
@@ -238,7 +235,7 @@ def test_seq2seq():
 
 if(__name__ == "__main__"):
     # test_pBLSTM()
-    test_encoder()
+    # test_encoder()
     # test_bmmAttention()
     # test_decoder()
-    # test_seq2seq()
+    test_seq2seq()
