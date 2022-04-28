@@ -142,7 +142,6 @@ class Decoder(nn.Module):
         mask = mask.to(device)
         #TODO Initialize the context
         predictions = []
-        prediction = torch.full((B,1), fill_value=0, device=device, dtype=torch.float32)
         hidden_states = [None]*self.num_layers
         prediction = torch.zeros(B, 1).to(device)
         context = value[:, 0, :] #initializing context with the first value
@@ -156,9 +155,9 @@ class Decoder(nn.Module):
                     else:
                         char_embed = char_embeddings[:, i-1, :]
                 else:
-                    char_embed = self.embedding(F.softmax(prediction).argmax(dim=-1))
+                    char_embed = self.embedding(F.softmax(prediction, dim=1).argmax(dim=-1))
             else:
-                char_embed = self.embedding(F.softmax(prediction).argmax(dim=-1))
+                char_embed = self.embedding(F.softmax(prediction, dim=1).argmax(dim=-1))
             y_context = torch.cat([char_embed, context], dim=1)
             y_context = self.locked_dropouts[0](y_context.unsqueeze(1)).squeeze(1)
             hidden_states[0] = self.lstms[0](y_context, hidden_states[0])

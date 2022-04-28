@@ -149,23 +149,20 @@ def val(model, val_loader, criterion, using_wandb, epoch):
 	l2i, i2l = create_dictionaries(LETTER_LIST)
 	dists = []
 	total_loss = 0
+	batch_bar = tqdm(total=len(val_loader), dynamic_ncols=True, desc='Train')
 	for i, data in enumerate(val_loader):
 		x, y, lx, ly = data
 		x = x.to(device)
 		y = y.to(device)
-		predictions, attentions = model(x, lx, y, mode="val")
-		mask = torch.arange(ly.max()).unsqueeze(0) >= ly.unsqueeze(1)
-		mask = mask.view(-1).to(device)
-		loss = criterion(predictions.view(-1, len(LETTER_LIST)), y.view(-1))
-		loss = loss.masked_fill_(mask, 0)
-		loss = torch.sum(loss)/mask.sum()
-		total_loss += loss
+		predictions, attentions = model(x, lx, y, mode="val")		
 		greedy_pred = torch.max(predictions, dim=2)[1]
 		dists.append(get_dist(greedy_pred, y))
+		batch_bar.update()
 	dists = np.array(dists)
 	lev_distance = np.mean(dists)
+	batch_bar.close()
 	if(using_wandb):
-		wandb.log({"val_loss": total_loss, "epoch":epoch, "lev_distance":lev_distance})
+		wandb.log({ "epoch":epoch, "lev_distance":lev_distance})
 	else:
 		print("lev_distance: ",lev_distance )
 
@@ -179,7 +176,7 @@ def get_dist(greedy_pred, y):
 		target_str = target_str.split('<eos>')[0][:]
 		pred_str = pred_str.split('<eos>')[0][:]
 		dist = dist + lev(target_str, pred_str)
-	return dist/y.shape[1]
+	return dist/y.shape[0]
 
 def test_get_save_load(args):
 	model = get_model(args)
@@ -247,13 +244,13 @@ if(__name__ == "__main__"):
 	run = wandb.init(project="11785_HW4P2", entity="stirumal", config=args) 
 	os.makedirs(args["runspath"]+"/"+run.name)
 
-	training(args)
+	# training(args)
 	#TEST TRAIN
 	# test_get_save_load(args)
 	
 	#TEST TRAIN
 	# test_train(args)
-	# test_val(args)
+	test_val(args)
 	# test_training(args)
 
 	
