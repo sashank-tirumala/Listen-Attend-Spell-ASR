@@ -153,7 +153,7 @@ def val(model, val_loader, criterion, using_wandb, epoch):
 		x, y, lx, ly = data
 		x = x.to(device)
 		y = y.to(device)
-		predictions, attentions = model(x, lx, y, mode="train")
+		predictions, attentions = model(x, lx, y, mode="val")
 		mask = torch.arange(ly.max()).unsqueeze(0) >= ly.unsqueeze(1)
 		mask = mask.view(-1).to(device)
 		loss = criterion(predictions.view(-1, len(LETTER_LIST)), y.view(-1))
@@ -243,11 +243,10 @@ if(__name__ == "__main__"):
 
 	args = vars(parser.parse_args())
 	print(args)
-	import os 
-	if not os.path.isdir(args["runspath"]):
-		os.makedirs(args["runspath"])
+	import os
+	run = wandb.init(project="11785_HW4P2", entity="stirumal", config=args) 
+	os.makedirs(args["runspath"]+"/"+run.name)
 
-	wandb.init(project="11785_HW4P2", entity="stirumal", config=args)
 	training(args)
 	#TEST TRAIN
 	# test_get_save_load(args)
