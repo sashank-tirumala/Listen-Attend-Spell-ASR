@@ -144,7 +144,7 @@ class Decoder(nn.Module):
                 hidden_states[i] = self.lstms[i](hidden_states[i-1][i-1], hidden_states[i])
             query =  hidden_states[-1][0]
             context, attention = self.attention(query, key, value, mask)
-            attention_plot.append(attention[0].detach().cpu())
+            attention_plot.append(attention[encoder_len.argmax()].detach().cpu())
             output_context = torch.cat([query, context], dim=1)
             prediction = self.character_prob(output_context)
             predictions.append(prediction.unsqueeze(1))		

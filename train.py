@@ -25,6 +25,7 @@ import wandb
 import argparse
 from Levenshtein import distance as lev
 from tqdm import tqdm
+import time
 LETTER_LIST = ['<sos>', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', \
          'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', "'", ' ', '<eos>']
 l2i, i2l = create_dictionaries(LETTER_LIST)
@@ -35,24 +36,26 @@ def plot_attention(attention):
     sns.heatmap(attention, cmap='GnBu')
     plt.savefig("attention.png")
 
-def train(model, criterion, train_loader, optimizer, i_ini, scheduler, using_wandb=False, tf=True):
+def train(model, criterion, train_loader, optimizer, i_ini, scheduler, scaler, using_wandb=False, tf=True, epoch=0):
 	model.train()
 	if not using_wandb:
 		batch_bar = tqdm(total=len(train_loader), dynamic_ncols=True, desc='Train')
 	total_loss = 0
 	for i, (x,y,lx,ly) in enumerate(train_loader):
-		x = x.to(device)
-		y = y.to(device)
-		predictions, attentions = model.forward(x, lx, y, mode="train", teacher_forcing=tf)
-		mask = torch.arange(ly.max()).unsqueeze(0) >= ly.unsqueeze(1)
-		mask = mask.view(-1).to(device)
-		loss = criterion(predictions.view(-1, len(LETTER_LIST)), y.view(-1))
-		loss = loss.masked_fill_(mask, 0)
-		loss = torch.sum(loss)/mask.sum()
-		total_loss += loss
+		with torch.cuda.amp.autocast():  
+			x = x.to(device)
+			y = y.to(device)
+			predictions, attentions = model.forward(x, lx, y, mode="train", teacher_forcing=tf)
+			mask = torch.arange(ly.max()).unsqueeze(0) >= ly.unsqueeze(1)
+			mask = mask.view(-1).to(device)
+			loss = criterion(predictions.view(-1, len(LETTER_LIST)), y.view(-1))
+			loss = loss.masked_fill_(mask, 0)
+			loss = torch.sum(loss)/mask.sum()
+		total_loss += float(loss)
 		optimizer.zero_grad()
-		loss.backward()
-		optimizer.step()
+		scaler.scale(loss).backward()
+		scaler.step(optimizer)
+		scaler.update()
 		if(using_wandb):
 			wandb.log({"loss":float(total_loss / (i + 1)), "step":int(i_ini), 'lr': float(optimizer.param_groups[0]['lr'])})
 		else:
@@ -61,7 +64,7 @@ def train(model, criterion, train_loader, optimizer, i_ini, scheduler, using_wan
 		if(scheduler is not None):
 			scheduler.step()
 		i_ini += 1
-	if(using_wandb):
+	if(using_wandb and epoch<25):
 		plot_attention(attentions)
 		wandb.log({"attention ": wandb.Image("attention.png")})
 	else:
@@ -81,6 +84,21 @@ def get_model(cfg):
 	attention=cfg["attention_type"]
 	).to(device)
 	return model
+def get_teacher_forcing(e, cfg):
+	if(e < cfg["warmup"]):
+		return True
+	else:
+		rate = max(1 - e * 0.01, 0)
+		if(np.random.uniform() < rate):
+			return True
+		else:
+			return False
+
+def get_scheduler(e, cfg, scheduler):
+	if(e < cfg["warmup"]):
+		return None
+	else:
+		return scheduler
 
 def dataloader(cfg):
 	if(cfg["simple"]):
@@ -97,10 +115,17 @@ def training(cfg):
 	criterion = nn.CrossEntropyLoss(reduction='none')
 	n_epochs = cfg["epochs"]
 	i_ini = 0
+	scaler = torch.cuda.amp.GradScaler()
 	for epoch in range(n_epochs):
-		i_ini, loss = train(model, criterion, train_loader, optimizer, i_ini, scheduler=None, using_wandb = cfg["wandb"], tf = get_teacher_forcing(epoch))
-		val(model, val_loader, using_wandb = cfg["wandb"], epoch = epoch)
-		save_model(model, optimizer, scheduler, loss,  cfg)
+		start = time.time()
+		i_ini, loss = train(model, criterion, train_loader, optimizer, i_ini, scheduler=get_scheduler(epoch, cfg, scheduler),scaler=scaler, using_wandb = cfg["wandb"], tf = get_teacher_forcing(epoch, cfg), epoch = epoch)
+		val(model, val_loader, criterion, using_wandb = cfg["wandb"], epoch = epoch)
+		stop = time.time()
+		if(cfg["wandb"]):
+			wandb.log({"epoch_time":(stop-start)/60.0})
+		else:
+			print("Epoch time: ",(stop-start)/60.0)
+		save_model(model, optimizer, scheduler, loss,  cfg, epoch)
 
 def save_model(model, optimizer, scheduler, loss,  cfg, epoch):
 	torch.save({'epoch': epoch, 
@@ -124,7 +149,6 @@ def val(model, val_loader, criterion, using_wandb, epoch):
 	model.eval()
 	l2i, i2l = create_dictionaries(LETTER_LIST)
 	dists = []
-	print("len: ", len(val_loader))
 	total_loss = 0
 	for i, data in enumerate(val_loader):
 		x, y, lx, ly = data
@@ -146,15 +170,7 @@ def val(model, val_loader, criterion, using_wandb, epoch):
 	else:
 		print("lev_distance: ",lev_distance )
 
-def get_teacher_forcing(e, cfg):
-	if(e < cfg["warmup"]):
-		return True
-	else:
-		rate = max(1 - epoch * 0.01, 0)
-		if(np.random.uniform < rate):
-			return True
-		else:
-			return False
+
 
 def get_dist(greedy_pred, y):
 	dist = 0
@@ -196,6 +212,9 @@ def test_val(cfg):
 	for epoch in range(10):
 		val(model, val_loader, criterion, using_wandb = cfg["wandb"], epoch=epoch)
 
+def test_training(cfg):
+	wandb.init(project="Test", entity="stirumal", config=args)
+	training(cfg)
 if(__name__ == "__main__"):
 	torch.manual_seed(11785)
 	torch.cuda.manual_seed(11785)
@@ -232,6 +251,7 @@ if(__name__ == "__main__"):
 	
 	#TEST TRAIN
 	# test_train(args)
-	test_val(args)
+	# test_val(args)
+	test_training(args)
 
 	
