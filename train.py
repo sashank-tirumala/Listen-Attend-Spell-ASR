@@ -53,6 +53,7 @@ def train(model, criterion, train_loader, optimizer, i_ini, scheduler, scaler, u
 			loss = torch.sum(loss)/mask.sum()
 		total_loss += float(loss)
 		optimizer.zero_grad()
+		torch.nn.utils.clip_grad_norm_(model.parameters(), 3.0)
 		scaler.scale(loss).backward()
 		scaler.step(optimizer)
 		scaler.update()
