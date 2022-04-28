@@ -113,7 +113,7 @@ def training(cfg):
 	model = get_model(cfg)
 	optimizer = optim.Adam(model.parameters(), lr = cfg["lr"], weight_decay=cfg["w_decay"])
 	train_loader, val_loader, test_loader = dataloader(cfg)
-	scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, cfg['epochs']*len(train_loader), eta_min=1e-6, last_epoch=- 1, verbose=False)
+	scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, cfg['epochs']*len(train_loader), eta_min=1e-6, last_epoch=- 1)
 	criterion = nn.CrossEntropyLoss(reduction='none')
 	n_epochs = cfg["epochs"]
 	i_ini = 0
