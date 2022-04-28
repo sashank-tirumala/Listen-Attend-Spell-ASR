@@ -247,7 +247,7 @@ if(__name__ == "__main__"):
 	args = vars(parser.parse_args())
 	print(args)
 	import os
-	run = wandb.init(project="test", entity="stirumal", config=args) 
+	run = wandb.init(project="11785_HW4P2", entity="stirumal", config=args) 
 	os.makedirs(args["runspath"]+"/"+run.name)
 
 	training(args)
