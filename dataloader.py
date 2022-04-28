@@ -85,6 +85,7 @@ class LibriSamples(torch.utils.data.Dataset):
         x = torch.tensor(np.load(self.x_dir+"/"+xdir))
         # x = torch.nn.functional.normalize(input, p=2.0, dim = 1) #Maybe I need to add this
         y_s = np.load(self.y_dir+"/"+ydir)
+        y_s = y_s[1: ]
         y = torch.tensor([self.letter2index[x] for x in y_s])
 
         return x,y
@@ -92,13 +93,12 @@ class LibriSamples(torch.utils.data.Dataset):
     def collate_fn(self,batch):
         x_batch = [x for x,y in batch]
         y_batch = [y for x,y in batch]
-        batch_x_pad = pad_sequence(x_batch)
+        batch_x_pad = pad_sequence(x_batch, batch_first=True)
         lengths_x = [len(x) for x in x_batch]
 
-        batch_y_pad = pad_sequence(y_batch)
+        batch_y_pad = pad_sequence(y_batch, batch_first=True)
         #Shifting y by one step forward
-        batch_y_pad=batch_y_pad[1:, :]
-        lengths_y = [len(y)-1 for y in y_batch]
+        lengths_y = [len(y) for y in y_batch]
 
         return batch_x_pad, batch_y_pad, torch.tensor(lengths_x), torch.tensor(lengths_y)
 
@@ -118,7 +118,7 @@ class LibriSamplesTest(torch.utils.data.Dataset):
     
     def collate_fn(self,batch):
         batch_x = [x for x in batch]
-        batch_x_pad = pad_sequence(batch_x)
+        batch_x_pad = pad_sequence(batch_x, batch_first=True)
         lengths_x = [len(x) for x in batch_x]
 
         return batch_x_pad, torch.tensor(lengths_x)
@@ -163,18 +163,18 @@ class LibriSamplesSimple:
     def __getitem__(self, ind):
         x = torch.tensor(self.X[ind])
         y_s = self.Y[ind]
+        y_s = y_s[1: ]
         y = torch.tensor([self.letter2index[x] for x in y_s])
         return x,y
 
     def collate_fn(self,batch):
         x_batch = [x for x,y in batch]
         y_batch = [y for x,y in batch]
-        batch_x_pad = pad_sequence(x_batch)
-        lengths_x = [len(x) for x in x_batch]
+        batch_x_pad = pad_sequence(x_batch, batch_first=True)
+        lengths_x = [x.shape[0] for x in x_batch]
 
-        batch_y_pad = pad_sequence(y_batch)
-        batch_y_pad=batch_y_pad[1:, :]
-        lengths_y = [len(y)-1 for y in y_batch]
+        batch_y_pad = pad_sequence(y_batch, batch_first=True)
+        lengths_y = [y.shape[0] for y in y_batch]
 
         return batch_x_pad, batch_y_pad, torch.tensor(lengths_x), torch.tensor(lengths_y)
 

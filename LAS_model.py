@@ -23,7 +23,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 class pBLSTM(nn.Module):
     def __init__(self, input_dim, hidden_dim):
         super(pBLSTM, self).__init__()
-        self.blstm = nn.LSTM(input_size = input_dim*2, hidden_size = hidden_dim, num_layers=1, bidirectional=True)
+        self.blstm = nn.LSTM(input_size = input_dim*2, hidden_size = hidden_dim, num_layers=1, bidirectional=True, batch_first=True)
 
 
     def forward(self, inp):
@@ -47,7 +47,7 @@ class pBLSTM(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, input_dim, encoder_hidden_dim, key_value_size=128, num_layers=4):
         super(Encoder, self).__init__()
-        self.lstm = nn.LSTM(input_size = input_dim, hidden_size = encoder_hidden_dim, bidirectional=True, num_layers=1)
+        self.lstm = nn.LSTM(input_size = input_dim, hidden_size = encoder_hidden_dim, bidirectional=True, num_layers=1, batch_first=True)
         #TODO add DropOut Below, maybe add more layers
         self.pBLSTMs = nn.ModuleList([pBLSTM(input_dim = encoder_hidden_dim*2, hidden_dim = encoder_hidden_dim)]*num_layers)
         self.pBLSTMs = nn.Sequential(*self.pBLSTMs)
@@ -55,11 +55,10 @@ class Encoder(nn.Module):
         self.value_network = nn.Linear(in_features = encoder_hidden_dim*2,out_features = 128)
 
     def forward(self, x, len_x):
-        packed_input = pack_padded_sequence(x,len_x, enforce_sorted=False, batch_first=False)
+        packed_input = pack_padded_sequence(x,len_x, enforce_sorted=False, batch_first=True)
         out1, (out2, out3) = self.lstm(packed_input)
         # out1 = self.pBLSTMs(out1)
-        out, lengths = pad_packed_sequence(out1,  batch_first=False)
-        out = out.permute(1,0,2)
+        out, lengths = pad_packed_sequence(out1,  batch_first=True)
         key = self.key_network(out)
         value = self.value_network(out)
         return key, value, lengths
@@ -109,11 +108,11 @@ class Decoder(nn.Module):
     def forward(self, key , value, encoder_len, y=None, mode='train', teacher_forcing=True):
         B, key_seq_max_len, key_value_size = key.shape
         if mode == 'train':
-            y = y.permute(1,0)
+            # y = y.permute(1,0)
             max_len = y.shape[1]
             char_embeddings = self.embedding(y)
         else:
-            y = y.permute(1,0)
+            # y = y.permute(1,0)
             max_len=600
         
         #Creating the attention mask here:
@@ -239,7 +238,7 @@ def test_seq2seq():
 
 if(__name__ == "__main__"):
     # test_pBLSTM()
-    # test_encoder()
+    test_encoder()
     # test_bmmAttention()
     # test_decoder()
-    test_seq2seq()
+    # test_seq2seq()
