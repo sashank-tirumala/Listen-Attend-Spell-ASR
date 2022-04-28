@@ -18,7 +18,25 @@ import datetime
 from torch.utils import data
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 import csv
+from torch.autograd import Variable
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
+class LockedDropout(nn.Module):
+    def __init__(self, dropout = 0.5):
+        super().__init__()
+        self.dropout = dropout
+
+    def forward(self, x):
+        if not self.training or not self.dropout:
+            return x
+        m = x.data.new(1, x.size(1), x.size(2)).bernoulli_(1 - self.dropout)
+        mask = Variable(m, requires_grad=False) / (1 - self.dropout)
+        mask = mask.expand_as(x)
+        return mask * x
+    def __repr__(self):
+        return self.__class__.__name__ + '(' \
+            + 'p=' + str(self.p) + ')'
 
 class pBLSTM(nn.Module):
     def __init__(self, input_dim, hidden_dim):
@@ -231,6 +249,16 @@ def test_seq2seq():
     print("Predictions: ",pred.shape)
     print("Attention: ",att.shape)
 
+def test_locked_dropout():
+    from dataloader import get_dataloader
+    root = 'hw4p2_student_data/hw4p2_student_data'
+    train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
+    x,y,len_x, len_y = next(iter(val_loader))
+    dp = LockedDropout(dropout = 0.99)
+    print(x)
+    x = dp(x)
+    print(x)
+    pass
 
 
 if(__name__ == "__main__"):
@@ -238,4 +266,5 @@ if(__name__ == "__main__"):
     # test_encoder()
     # test_bmmAttention()
     # test_decoder()
-    test_seq2seq()
+    # test_seq2seq()
+    test_locked_dropout()
