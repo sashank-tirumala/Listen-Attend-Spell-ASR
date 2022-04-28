@@ -57,13 +57,8 @@ class Encoder(nn.Module):
     def forward(self, x, len_x):
         packed_input = pack_padded_sequence(x,len_x, enforce_sorted=False, batch_first=False)
         out1, (out2, out3) = self.lstm(packed_input)
-        del out2, out3
-        out1 = self.pBLSTMs(out1)
-        try:
-            out, lengths = pad_packed_sequence(out1,  batch_first=False)
-        except:
-            from IPython import embed; embed()
-        # print(out.shape)
+        # out1 = self.pBLSTMs(out1)
+        out, lengths = pad_packed_sequence(out1,  batch_first=False)
         out = out.permute(1,0,2)
         key = self.key_network(out)
         value = self.value_network(out)
@@ -87,7 +82,7 @@ class bmmAttention(nn.Module):
         attention = F.softmax(energy, dim= - 1) #Pretty sure it is right, but noting anyway
         # print("attention: ",attention.shape)
         # print("value: ",value.shape)
-        context = torch.sum(attention.unsqueeze(2)*value, dim=1)
+        context = torch.bmm(attention.unsqueeze(1), value).squeeze(1)
         return context, attention
 
 
@@ -97,26 +92,22 @@ class Decoder(nn.Module):
         #Be careful with padding_idx
         self.embedding = nn.Embedding(num_embeddings = vocab_size, embedding_dim = embed_dim, padding_idx = 0)
         #Might want to concatenate context here
-        self.lstm1 = nn.LSTMCell(embed_dim+key_value_size, hidden_size = decoder_hidden_dim, bias=True)
-        self.lstm2 = nn.LSTMCell(decoder_hidden_dim, decoder_hidden_dim, bias=True)
+        self.lstm1 = nn.LSTMCell(embed_dim+key_value_size, hidden_size = key_value_size)
+        # self.lstm2 = nn.LSTMCell(decoder_hidden_dim, decoder_hidden_dim, bias=True) TODO UNCOMMENT when basic attention done
 
         self.attention = bmmAttention()
-        self.query_linear = nn.Linear(in_features = decoder_hidden_dim, out_features = key_value_size)
+        # self.query_linear = nn.Linear(in_features = decoder_hidden_dim, out_features = key_value_size) #Might not be needed
         self.vocab_size = vocab_size
         
-        self.character_prob = nn.Linear(in_features = key_value_size+embed_dim, out_features = vocab_size, bias=True)
+        self.character_prob = nn.Linear(in_features = key_value_size*2, out_features = vocab_size)
         self.key_value_size = key_value_size
 
         #Optional Weight Tying
-        # self.character_prob.weight = self.embedding.weight
+        print(self.character_prob.weight.shape, self.embedding.weight.shape)
+        self.character_prob.weight = self.embedding.weight #
 
     def forward(self, key , value, encoder_len, y=None, mode='train', teacher_forcing=True):
         B, key_seq_max_len, key_value_size = key.shape
-        predictions = []
-        hidden_states = [None, None]
-        attention_plot = []
-        prediction = torch.zeros(B, 1).to(device)
-
         if mode == 'train':
             y = y.permute(1,0)
             max_len = y.shape[1]
@@ -126,39 +117,33 @@ class Decoder(nn.Module):
             max_len=600
         
         #Creating the attention mask here:
-        mask = []
-        for i in range(len(encoder_len)):
-            mask_temp = torch.arange(0, key.shape[1], dtype=torch.float32).to(device)
-            mask_temp = mask_temp > encoder_len[i]
-            mask.append(mask_temp)
-        # print(mask)
-        # print(encoder_len)
-        mask = torch.stack(mask).to(device)
+        mask = torch.arange(encoder_len.max()).unsqueeze(0) >= encoder_len.unsqueeze(1)  # encoder_len original len for seq, (B, T)
+        mask = mask.to(device)
         #TODO Initialize the context
+        predictions = []
+        prediction = torch.full((B,1), fill_value=0, device=device)
+        hidden_states = [None, None]
+        prediction = torch.zeros(B, 1).to(device)
         context = value[:, 0, :] #initializing context with the first value
+        context = context.to(device)
+        attention_plot=[]
         # from IPython import embed; embed()
         for i in range(max_len):
             if mode == 'train':
                 if teacher_forcing:
                     if i == 0:
-                        start_char = torch.zeros(B, dtype=torch.long).fill_(0).to(device)
-                        char_embed = self.embedding(start_char)
+                        char_embed = torch.full((B, char_embeddings.shape[2]), fill_value=0, device=device) # For timestamp 0, input should be <SOS>, which is 0
                     else:
                         char_embed = char_embeddings[:, i-1, :]
                 else:
                     char_embed = self.embedding(softmax(prediction).argmax(dim=-1))
             else:
-                if i == 0:
-                    start_char = torch.zeros(B, dtype=torch.long).fill_(0).to(device)
-                    char_embed = self.embedding(start_char)
-                else:
-                    char_embed = char_embeddings[:, i-1, :]
-            context = torch.cat([char_embed, context], dim=1)
-            # del char_embed
-            hidden_states[0] = self.lstm1(context, hidden_states[0])
-            hidden_states[1] = self.lstm2(hidden_states[0][0], hidden_states[1])
+                char_embed = self.embedding(softmax(prediction).argmax(dim=-1))
+            y_context = torch.cat([char_embed, context], dim=1)
+            hidden_states[0] = self.lstm1(y_context, hidden_states[0])
+            # hidden_states[1] = self.lstm2(hidden_states[0][0], hidden_states[1])
 
-            query = self.query_linear(hidden_states[1][0])
+            query =  hidden_states[0][0] #TODO change with multilayers
             context, attention = self.attention(query, key, value, mask)
             # print(i, attention.shape)
             attention_plot.append(attention[0].detach().cpu())
@@ -166,9 +151,6 @@ class Decoder(nn.Module):
             # del query
             prediction = self.character_prob(output_context)
             #Checking if any major errors were made
-            if torch.isnan(prediction).any():
-                print(i)
-                from IPython import embed; embed()
             predictions.append(prediction.unsqueeze(1))		
         attentions = torch.stack(attention_plot, dim=0)
         predictions = torch.cat(predictions, dim=1)
