@@ -104,7 +104,7 @@ class multiheadAttention(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, vocab_size, decoder_hidden_dim, embed_dim ,key_value_size=128, num_decoder_layers=2, attention_type="single"):
+    def __init__(self, vocab_size, decoder_hidden_dim, embed_dim ,key_value_size=128, num_decoder_layers=2, attention_type="single", dropout= 0.5):
         super(Decoder, self).__init__()
         #Be careful with padding_idx
         embed_dim = 2*key_value_size #Needed for weight tying
@@ -122,6 +122,9 @@ class Decoder(nn.Module):
         self.character_prob = nn.Linear(in_features = key_value_size*2, out_features = vocab_size)
         self.key_value_size = key_value_size
         self.num_layers = num_decoder_layers
+        self.locked_dropouts = nn.ModuleList([])
+        for i in range(num_decoder_layers):
+            self.locked_dropouts.append(LockedDropout(dropout))
 
         #Optional Weight Tying
         self.character_prob.weight = self.embedding.weight #
@@ -157,9 +160,11 @@ class Decoder(nn.Module):
             else:
                 char_embed = self.embedding(softmax(prediction).argmax(dim=-1))
             y_context = torch.cat([char_embed, context], dim=1)
+            y_context = self.locked_dropouts[0](y_context.unsqueeze(1)).squeeze(1)
             hidden_states[0] = self.lstms[0](y_context, hidden_states[0])
             for i in range(1, self.num_layers):
-                hidden_states[i] = self.lstms[i](hidden_states[i-1][i-1], hidden_states[i])
+                out = self.locked_dropouts[i](hidden_states[i-1][i-1].unsqueeze(1)).squeeze(1)
+                hidden_states[i] = self.lstms[i](out, hidden_states[i])
             query =  hidden_states[-1][0]
             context, attention = self.attention(query, key, value, mask)
             attention_plot.append(attention[encoder_len.argmax()].detach().cpu())
@@ -265,6 +270,6 @@ if(__name__ == "__main__"):
     # test_pBLSTM()
     # test_encoder()
     # test_bmmAttention()
-    # test_decoder()
+    test_decoder()
     # test_seq2seq()
-    test_locked_dropout()
+    # test_locked_dropout()

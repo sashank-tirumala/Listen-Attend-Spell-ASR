@@ -239,6 +239,8 @@ if(__name__ == "__main__"):
 	parser.add_argument('-sim','--simple', type=bool, help='use simple dataset', default=False)
 	parser.add_argument('-w','--wandb', type=bool, help='determines if Wandb is to be used', default=False)
 	parser.add_argument('-wu','--warmup', type=int, help='determines if Wandb is to be used', default=12)
+	parser.add_argument('-dp','--warmup', type=float, help='dropout percent', default=0.5)
+
 
 
 	args = vars(parser.parse_args())
@@ -246,13 +248,14 @@ if(__name__ == "__main__"):
 	if not os.path.isdir(args["runspath"]):
 		os.makedirs(args["runspath"])
 
-	# wandb.init(project="11785_HW4P2", entity="stirumal", config=args)
+	wandb.init(project="11785_HW4P2", entity="stirumal", config=args)
+	training(args)
 	#TEST TRAIN
 	# test_get_save_load(args)
 	
 	#TEST TRAIN
 	# test_train(args)
 	# test_val(args)
-	test_training(args)
+	# test_training(args)
 
 	
