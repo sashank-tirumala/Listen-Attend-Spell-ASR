@@ -67,7 +67,7 @@ def train(model, criterion, train_loader, optimizer, i_ini, scheduler, using_wan
 	else:
 		plot_attention(attentions)
 		batch_bar.close()
-	return i_ini
+	return i_ini, float(total_loss / (i + 1)
 
 def get_model(cfg):
 	model = Seq2Seq(input_dim = x.shape[-1], 
@@ -98,9 +98,28 @@ def training(cfg):
 	n_epochs = cfg["epochs"]
 	i_ini = 0
 	for epoch in range(n_epochs):
-		i_ini = train(model, criterion, train_loader, optimizer, i_ini, scheduler=None, using_wandb = cfg["wandb"], tf = get_teacher_forcing(epoch))
+		i_ini, loss = train(model, criterion, train_loader, optimizer, i_ini, scheduler=None, using_wandb = cfg["wandb"], tf = get_teacher_forcing(epoch))
 		val(model, val_loader, using_wandb = cfg["wandb"], epoch)
+		save_model(model, optimizer, scheduler, loss,  cfg)
 
+def save_model(model, optimizer, scheduler, loss,  cfg):
+	torch.save({'epoch': epoch, 
+				'model_state_dict': model.state_dict(),
+				'optimizer_state_dict':optimizer.state_dict(),
+				'scheduler_state_dict':scheduler.state_dict(),
+				'loss':loss,
+				'cfg':cfg
+				}, cfg["runspath"]+"/"+"ckpt")
+
+def load_model(path):
+	checkpoint = torch.load(path):
+	model = get_model(checkpoint["cfg"])
+	optimizer = optim.Adam(model.parameters(), lr = cfg["lr"], weight_decay=cfg["w_decay"])
+	scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, cfg['epochs']*len(train_loader), eta_min=1e-6, last_epoch=- 1, verbose=False)
+	model.load_state_dict(checkpoint["model_state_dict"])
+	optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+	scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+	return model, optimizer, scheduler
 def val(model, val_loader, using_wandb, epoch):
 	model.eval()
 	l2i, i2l = create_dictionaries(LETTER_LIST)
@@ -162,6 +181,10 @@ if(__name__ == "__main__"):
 	parser.add_argument('-w','--wandb', type=bool, help='determines if Wandb is to be used', default=False)
 
 	args = vars(parser.parse_args())
+	import os 
+	if not os.path.isdir(args["runspath"]):
+		os.makedirs(args["runspath"])
+
 	wandb.init(project="11785_HW4P2", entity="stirumal", config=args)
 	train(args)
 	
