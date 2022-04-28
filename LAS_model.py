@@ -162,7 +162,7 @@ class Decoder(nn.Module):
             y_context = self.locked_dropouts[0](y_context.unsqueeze(1)).squeeze(1)
             hidden_states[0] = self.lstms[0](y_context, hidden_states[0])
             for i in range(1, self.num_layers):
-                out = self.locked_dropouts[i](hidden_states[i-1][i-1].unsqueeze(1)).squeeze(1)
+                out = self.locked_dropouts[i](hidden_states[i-1][0].unsqueeze(1)).squeeze(1)
                 hidden_states[i] = self.lstms[i](out, hidden_states[i])
             query =  hidden_states[-1][0]
             context, attention = self.attention(query, key, value, mask)
