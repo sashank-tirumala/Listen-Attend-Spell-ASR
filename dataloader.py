@@ -163,7 +163,6 @@ class LibriSamplesSimple:
     def __getitem__(self, ind):
         x = torch.tensor(self.X[ind])
         y_s = self.Y[ind]
-        y_s = y_s[1:-1]
         y = torch.tensor([self.letter2index[x] for x in y_s])
         return x,y
 
@@ -173,8 +172,9 @@ class LibriSamplesSimple:
         batch_x_pad = pad_sequence(x_batch)
         lengths_x = [len(x) for x in x_batch]
 
-        batch_y_pad = pad_sequence(y_batch) 
-        lengths_y = [len(y) for y in y_batch]
+        batch_y_pad = pad_sequence(y_batch)
+        batch_y_pad=batch_y_pad[1:, :]
+        lengths_y = [len(y)-1 for y in y_batch]
 
         return batch_x_pad, batch_y_pad, torch.tensor(lengths_x), torch.tensor(lengths_y)
 

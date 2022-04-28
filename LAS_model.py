@@ -82,7 +82,7 @@ class bmmAttention(nn.Module):
         # size = torch.tensor(key.shape[1], dtype=torch.float32).to(device)
         #TODO Mask Energy -- Mask might be wrong, mostly correct though
         energy = torch.bmm(key, query.unsqueeze(2)).squeeze(2)
-        energy.masked_fill_(mask, torch.tensor(float("-inf")))
+        # energy.masked_fill_(mask, torch.tensor(float("-inf")))
         # print("energy: ", energy.shape)
         attention = F.softmax(energy, dim= - 1) #Pretty sure it is right, but noting anyway
         # print("attention: ",attention.shape)
@@ -180,9 +180,9 @@ class Seq2Seq(nn.Module):
         self.encoder = Encoder(input_dim, encoder_hidden_dim, num_layers = num_layers)
         self.decoder = Decoder(vocab_size, decoder_hidden_dim, embed_dim ,key_value_size=128)
     
-    def forward(self, x, x_len, y=None, mode='train'):
+    def forward(self, x, x_len, y=None, mode='train', teacher_forcing=True):
         key, value, encoder_len = self.encoder(x, x_len)
-        predictions, attentions = self.decoder(key, value, encoder_len, y=y, mode=mode)
+        predictions, attentions = self.decoder(key, value, encoder_len, y=y, mode=mode, teacher_forcing=teacher_forcing)
         return predictions, attentions
 
 def test_pBLSTM():
