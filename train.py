@@ -63,14 +63,14 @@ def train(model, criterion, train_loader, optimizer, i_ini, scheduler, using_wan
 		i_ini += 1
 	if(using_wandb):
 		plot_attention(attentions)
-		wandb.log("attention: ", wandb.Image("attention.png"))
+		wandb.log({"attention ": wandb.Image("attention.png")})
 	else:
 		plot_attention(attentions)
 		batch_bar.close()
 	return i_ini, float(total_loss / (i + 1))
 
 def get_model(cfg):
-	model = Seq2Seq(input_dim = len(LETTER_LIST), 
+	model = Seq2Seq(input_dim = 13, 
 	encoder_hidden_dim = cfg["encoder_dim"], 
 	decoder_hidden_dim = cfg["decoder_dim"], 
 	vocab_size=len(LETTER_LIST), 
@@ -146,6 +146,15 @@ def val(model, val_loader, using_wandb, epoch):
 	else:
 		print("lev_distance: ",lev_distance )
 
+def get_teacher_forcing(e, cfg):
+	if(e < cfg["warmup"]):
+		return True
+	else:
+		rate = max(1 - epoch * 0.01, 0)
+		if(np.random.uniform < rate):
+			return True
+		else:
+			return False
 
 def get_dist(greedy_pred, y):
 	dist = 0
@@ -165,6 +174,19 @@ def test_get_save_load(args):
 	save_model(model, optimizer, scheduler, loss=10, cfg = args, epoch=3 )
 	m, o, s, c=load_model("/home/sashank/Courses/11785_HW4_P2/hello/ckpt")
 	print(m)
+
+def test_train(cfg):
+	model = get_model(cfg)
+	optimizer = optim.Adam(model.parameters(), lr = cfg["lr"], weight_decay=cfg["w_decay"])
+	wandb.init(project="Test", entity="stirumal", config=args)
+	train_loader, val_loader, test_loader = dataloader(cfg)
+	scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, cfg['epochs']*len(train_loader), eta_min=1e-6, last_epoch=- 1, verbose=False)
+	criterion = nn.CrossEntropyLoss(reduction='none')
+	n_epochs = cfg["epochs"]
+	i_ini = 0
+	i_ini, loss = train(model, criterion, train_loader, optimizer, i_ini, scheduler=None, using_wandb = cfg["wandb"], tf = get_teacher_forcing(1, cfg))
+	print(i_ini, loss)
+
 if(__name__ == "__main__"):
 	torch.manual_seed(11785)
 	torch.cuda.manual_seed(11785)
@@ -187,6 +209,8 @@ if(__name__ == "__main__"):
 	parser.add_argument('-kvs','--key_value_size', type=int, help='Number of layers in encoder only', default=128)
 	parser.add_argument('-sim','--simple', type=bool, help='use simple dataset', default=False)
 	parser.add_argument('-w','--wandb', type=bool, help='determines if Wandb is to be used', default=False)
+	parser.add_argument('-wu','--warmup', type=int, help='determines if Wandb is to be used', default=12)
+
 
 	args = vars(parser.parse_args())
 	import os 
@@ -198,6 +222,6 @@ if(__name__ == "__main__"):
 	# test_get_save_load(args)
 	
 	#TEST TRAIN
-	# train(args)
+	test_train(args)
 
 	
