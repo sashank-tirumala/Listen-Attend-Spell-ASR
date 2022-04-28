@@ -176,10 +176,10 @@ class Decoder(nn.Module):
         return predictions, attentions
 
 class Seq2Seq(nn.Module):
-    def __init__(self, input_dim, vocab_size, encoder_hidden_dim, decoder_hidden_dim, embed_dim, key_value_size=128, num_layers=4, num_decoder_layers=2, attention="single"):
+    def __init__(self, input_dim, vocab_size, encoder_hidden_dim, decoder_hidden_dim, embed_dim, dropout=0.3, key_value_size=128, num_layers=4, num_decoder_layers=2, attention="single"):
         super(Seq2Seq,self).__init__()
         self.encoder = Encoder(input_dim, encoder_hidden_dim, num_layers = num_layers)
-        self.decoder = Decoder(vocab_size, decoder_hidden_dim, embed_dim ,key_value_size=128, num_decoder_layers=num_decoder_layers, attention_type="single")
+        self.decoder = Decoder(vocab_size, decoder_hidden_dim, embed_dim ,key_value_size=128, num_decoder_layers=num_decoder_layers, attention_type="single", dropout=dropout)
     
     def forward(self, x, x_len, y=None, mode='train', teacher_forcing=True):
         key, value, encoder_len = self.encoder(x, x_len)

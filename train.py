@@ -82,7 +82,8 @@ def get_model(cfg):
 	key_value_size=cfg["key_value_size"],
 	num_layers=cfg["num_layers_encoder"], 
 	num_decoder_layers=cfg["num_layers_decoder"], 
-	attention=cfg["attention_type"]
+	attention=cfg["attention_type"],
+	dropout = cfg["dropout"]
 	).to(device)
 	return model
 def get_teacher_forcing(e, cfg):
@@ -103,6 +104,7 @@ def get_scheduler(e, cfg, scheduler):
 
 def dataloader(cfg):
 	if(cfg["simple"]):
+		print(cfg["simple"])
 		train_loader, val_loader = get_simple_dataloader(cfg["datapath"], batch_size = cfg["batch_size"])
 		return train_loader, val_loader, None
 	else:
@@ -236,14 +238,15 @@ if(__name__ == "__main__"):
 	parser.add_argument('-dd','--decoder_dim', type=int, help='Dimensionality of decoder only', default=256)
 	parser.add_argument('-ebd','--embed_dim', type=int, help='Number of layers in encoder only', default=128),
 	parser.add_argument('-kvs','--key_value_size', type=int, help='Number of layers in encoder only', default=128)
-	parser.add_argument('-sim','--simple', type=bool, help='use simple dataset', default=False)
-	parser.add_argument('-w','--wandb', type=bool, help='determines if Wandb is to be used', default=False)
+	parser.add_argument('-sim','--simple', type=int, help='use simple dataset', default=0)
+	parser.add_argument('-w','--wandb', type=int, help='determines if Wandb is to be used', default=0)
 	parser.add_argument('-wu','--warmup', type=int, help='determines if Wandb is to be used', default=12)
-	parser.add_argument('-dp','--warmup', type=float, help='dropout percent', default=0.5)
+	parser.add_argument('-drp','--dropout', type=float, help='dropout percent', default=0.5)
 
 
 
 	args = vars(parser.parse_args())
+	print(args)
 	import os 
 	if not os.path.isdir(args["runspath"]):
 		os.makedirs(args["runspath"])
