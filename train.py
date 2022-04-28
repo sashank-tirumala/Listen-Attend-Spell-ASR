@@ -37,6 +37,7 @@ def plot_attention(attention):
 
 def train(model, criterion, train_loader, optimizer, i_ini, scheduler, scaler, using_wandb=False, tf=True, epoch=0):
 	model.train()
+	torch.cuda.empty_cache()
 	if not using_wandb:
 		batch_bar = tqdm(total=len(train_loader), dynamic_ncols=True, desc='Train')
 	total_loss = 0
@@ -59,6 +60,7 @@ def train(model, criterion, train_loader, optimizer, i_ini, scheduler, scaler, u
 		else:
 			batch_bar.set_postfix(loss="{:.04f}".format(float(total_loss / (i + 1))))
 			batch_bar.update()
+		torch.cuda.empty_cache()
 		if(scheduler is not None):
 			scheduler.step()
 		i_ini += 1
@@ -149,15 +151,18 @@ def val(model, val_loader, criterion, using_wandb, epoch):
 	l2i, i2l = create_dictionaries(LETTER_LIST)
 	dists = []
 	total_loss = 0
+	torch.cuda.empty_cache()
 	batch_bar = tqdm(total=len(val_loader), dynamic_ncols=True, desc='Train')
 	for i, data in enumerate(val_loader):
-		x, y, lx, ly = data
-		x = x.to(device)
-		y = y.to(device)
-		predictions, attentions = model(x, lx, y, mode="val")		
-		greedy_pred = torch.max(predictions, dim=2)[1]
-		dists.append(get_dist(greedy_pred, y))
-		batch_bar.update()
+		with torch.no_grad():
+			x, y, lx, ly = data
+			x = x.to(device)
+			y = y.to(device)
+			predictions, attentions = model(x, lx, y, mode="val")		
+			greedy_pred = torch.max(predictions, dim=2)[1]
+			dists.append(get_dist(greedy_pred, y))
+			batch_bar.update()
+			torch.cuda.empty_cache()
 	dists = np.array(dists)
 	lev_distance = np.mean(dists)
 	batch_bar.close()
@@ -165,6 +170,7 @@ def val(model, val_loader, criterion, using_wandb, epoch):
 		wandb.log({ "epoch":epoch, "lev_distance":lev_distance})
 	else:
 		print("lev_distance: ",lev_distance )
+	# print("here")
 
 
 
@@ -241,16 +247,16 @@ if(__name__ == "__main__"):
 	args = vars(parser.parse_args())
 	print(args)
 	import os
-	run = wandb.init(project="11785_HW4P2", entity="stirumal", config=args) 
+	run = wandb.init(project="test", entity="stirumal", config=args) 
 	os.makedirs(args["runspath"]+"/"+run.name)
 
-	# training(args)
+	training(args)
 	#TEST TRAIN
 	# test_get_save_load(args)
 	
 	#TEST TRAIN
 	# test_train(args)
-	test_val(args)
+	# test_val(args)
 	# test_training(args)
 
 	
