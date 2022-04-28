@@ -35,66 +35,97 @@ def plot_attention(attention):
     sns.heatmap(attention, cmap='GnBu')
     plt.savefig("attention.png")
 
-def train(cfg):
-	model = Seq2Seq(input_dim = 13,  encoder_hidden_dim = cfg["encoder_dim"], decoder_hidden_dim = cfg["decoder_dim"], vocab_size=30, embed_dim=cfg["embed_dim"], key_value_size=cfg["key_value_size"], num_layers = cfg["num_layers_encoder"]).to(device)
-	print(model)
-	optimizer = optim.Adam(model.parameters(), lr = cfg["lr"], weight_decay=cfg["w_decay"])
-	root = cfg["datapath"]
-	if(cfg["simple"]):
-		train_loader, val_loader = get_simple_dataloader(root, batch_size = cfg["batch_size"])
+def train(model, criterion, train_loader, optimizer, i_ini, scheduler, using_wandb=False, tf=True):
+	model.train()
+	if not using_wandb:
+		batch_bar = tqdm(total=len(train_loader), dynamic_ncols=True, desc='Train')
+	total_loss = 0
+	for i, (x,y,lx,ly) in enumerate(train_loader):
+		x = x.to(device)
+		y = y.to(device)
+		predictions, attentions = model.forward(x, lx, y, mode="train", teacher_forcing=tf)
+		mask = torch.arange(ly.max()).unsqueeze(0) >= ly.unsqueeze(1)
+		mask = mask.view(-1).to(device)
+		loss = criterion(predictions.view(-1, len(LETTER_LIST)), y.view(-1))
+		loss = loss.masked_fill_(mask, 0)
+		loss = torch.sum(loss)/mask.sum()
+		total_loss += loss
+		optimizer.zero_grad()
+		loss.backward()
+		optimizer.step()
+		if(using_wandb):
+			wandb.log({"loss":float(total_loss / (i + 1)), "step":int(i_ini), 'lr': float(optimizer.param_groups[0]['lr'])})
+		else:
+			batch_bar.set_postfix(loss="{:.04f}".format(float(total_loss / (i + 1))))
+			batch_bar.update()
+		if(scheduler is not None):
+			scheduler.step()
+		i_ini += 1
+	if(using_wandb):
+		plot_attention(attentions)
+		wandb.log("attention: ", wandb.Image("attention.png"))
 	else:
-		train_loader, val_loader, test_loader = get_dataloader(root, batch_size=cfg["batch_size"])
+		plot_attention(attentions)
+		batch_bar.close()
+	return i_ini
+
+def get_model(cfg):
+	model = Seq2Seq(input_dim = x.shape[-1], 
+	encoder_hidden_dim = cfg["encoder_dim"], 
+	decoder_hidden_dim = cfg["decoder_dim"], 
+	vocab_size=len(LETTER_LIST), 
+	embed_dim=cfg["embed_dim"],
+	key_value_size=cfg["key_value_size"],
+	num_layers=cfg["num_layers_encoder"], 
+	num_decoder_layers=cfg["num_layers_decoder"], 
+	attention=cfg["attention_type"]
+	).to(device)
+	return model
+
+def dataloader(cfg):
+	f(cfg["simple"]):
+		train_loader, val_loader = get_simple_dataloader(cfg["datapath"], batch_size = cfg["batch_size"])
+		return train_loader, val_loader, None
+	else:
+		train_loader, val_loader, test_loader = get_dataloader(cfg["datapath"], batch_size=cfg["batch_size"])
+		return train_loader, val_loader, test_loader
+def training(cfg):
+	model = get_model(cfg)
+	optimizer = optim.Adam(model.parameters(), lr = cfg["lr"], weight_decay=cfg["w_decay"])
+	train_loader, val_loader, test_loader = dataloader(cfg)
 	scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, cfg['epochs']*len(train_loader), eta_min=1e-6, last_epoch=- 1, verbose=False)
 	criterion = nn.CrossEntropyLoss(reduction='none')
 	n_epochs = cfg["epochs"]
-	running_loss = 0
+	i_ini = 0
 	for epoch in range(n_epochs):
-		model.train()
-		batch_bar = tqdm(total=len(train_loader), dynamic_ncols=True, desc='Train')
-		total_loss = 0
-		for i, data in enumerate(train_loader):
-			scaler = torch.cuda.amp.GradScaler()
-			optimizer.zero_grad()
-			with torch.cuda.amp.autocast():  
-				x, y, lx, ly = data
-				x = x.cuda()
-				y = y.cuda()
-				predictions, attentions = model.forward(x, lx, y, mode="train", teacher_forcing=True)
-				mask = generate_mask(ly)
-				loss = criterion(predictions.view(-1, predictions.shape[2]), y.view(-1))
-				masked_loss = torch.sum(loss*mask.view(-1))/mask.sum()
-				torch.cuda.empty_cache()
+		i_ini = train(model, criterion, train_loader, optimizer, i_ini, scheduler=None, using_wandb = cfg["wandb"], tf = get_teacher_forcing(epoch))
+		val(model, val_loader, using_wandb = cfg["wandb"], epoch)
 
-			curr_loss = masked_loss.item()
-			total_loss += curr_loss
-			# wandb.log( { 'loss_step' : float(total_loss / (i + 1)) } )
-			# wandb.log({'lr_step': float(optimizer.param_groups[0]['lr']) })
-			scaler.scale(masked_loss).backward()
-			torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
-			scaler.step(optimizer)
-			scaler.update()
-			#scheduler.step() # We told scheduler T_max that we'd call step() (len(train_loader) * epochs) many times.
-			batch_bar.set_postfix(loss="{:.04f}".format(float(total_loss / (i + 1))))
-			batch_bar.update()
-		plot_attention(attentions)
-		dist = val(model, val_loader)
-		batch_bar.close()
-		print("Lev Distance: ", dist)
-
-def val(model, val_loader):
+def val(model, val_loader, using_wandb, epoch):
 	model.eval()
 	l2i, i2l = create_dictionaries(LETTER_LIST)
 	dists = []
 	print("len: ", len(val_loader))
+	total_loss = 0
 	for i, data in enumerate(val_loader):
 		x, y, lx, ly = data
-		x = x.cuda()
-		y = y.cuda()
+		x = x.to(device)
+		y = y.to(device)
 		predictions, attentions = model(x, lx, y, mode="train")
+		mask = torch.arange(ly.max()).unsqueeze(0) >= ly.unsqueeze(1)
+		mask = mask.view(-1).to(device)
+		loss = criterion(predictions.view(-1, len(LETTER_LIST)), y.view(-1))
+		loss = loss.masked_fill_(mask, 0)
+		loss = torch.sum(loss)/mask.sum()
+		total_loss += loss
 		greedy_pred = torch.max(predictions, dim=2)[1]
 		dists.append(get_dist(greedy_pred, y))
 	dists = np.array(dists)
-	return np.mean(dists)
+	lev_distance = np.mean(dists)
+	if(using_wandb):
+		wandb.log({"val_loss": total_loss, "epoch":epoch, "lev_distance":lev_distance})
+	else:
+		print("lev_distance: ",lev_distance )
 
 
 def get_dist(greedy_pred, y):
@@ -113,22 +144,24 @@ if(__name__ == "__main__"):
 	np.random.seed(11785)
 	random.seed(11785)
 	parser = argparse.ArgumentParser(description='Description of your program')
-	parser.add_argument('-lr','--lr', type=float, help='learning rate', default = 1e-3) # required=True ,
-	parser.add_argument('-wd','--w_decay', type=float, help='weight decay (regularization)', default=0) #required=True ,
-	# parser.add_argument('-m','--momentum', type=float, help='momentum (Adam)',  default=0)#required=True ,
-	parser.add_argument('-bs','--batch_size', type=int, help='Description for bar argument', default=8)#required=True ,
-	parser.add_argument('-e','--epochs', type=int, help='Description for bar argument', default=50)#required=True ,
-	parser.add_argument('-dp','--datapath', type=str, help='Description for bar argument', default="hw4p2_student_data/hw4p2_student_data")#required=True ,
-	parser.add_argument('-rp','--runspath', type=str, help='Description for bar argument', default="")#required=True ,
-	parser.add_argument('-t','--transform', type=bool, help='Description for bar argument', default=True)#required=True ,
-	parser.add_argument('-nl','--num_layers_encoder', type=int, help='Number of layers in encoder only', default=3)#required=True ,
-	parser.add_argument('-ed','--encoder_dim', type=int, help='Number of layers in encoder only', default=256)#required=True ,
-	parser.add_argument('-dd','--decoder_dim', type=int, help='Number of layers in encoder only', default=256)#required=True ,
-	parser.add_argument('-ebd','--embed_dim', type=int, help='Number of layers in encoder only', default=128)#required=True ,
-	parser.add_argument('-kvs','--key_value_size', type=int, help='Number of layers in encoder only', default=128)#required=True ,
-	parser.add_argument('-sim','--simple', type=bool, help='use simple dataset', default=False)#required=True ,
+	parser.add_argument('-lr','--lr', type=float, help='learning rate', default = 1e-3) 
+	parser.add_argument('-wd','--w_decay', type=float, help='weight decay (regularization)', default=0) 
+	parser.add_argument('-bs','--batch_size', type=int, help='Description for bar argument', default=8)
+	parser.add_argument('-e','--epochs', type=int, help='Description for bar argument', default=50)
+	parser.add_argument('-dp','--datapath', type=str, help='Description for bar argument', default="hw4p2_student_data/hw4p2_student_data")
+	parser.add_argument('-rp','--runspath', type=str, help='Description for bar argument', default="")
+	parser.add_argument('-t','--transform', type=bool, help='Description for bar argument', default=True)
+	parser.add_argument('-nl','--num_layers_encoder', type=int, help='Number of layers in encoder only', default=3)
+	parser.add_argument('-nld','--num_layers_decoder', type=int, help='Number of layers in decoder only', default=2)
+	parser.add_argument('-ap','--attention_type', type=str, help='type of attention used', default="single")
+	parser.add_argument('-ed','--encoder_dim', type=int, help='Dimensionality of encoder only', default=256)
+	parser.add_argument('-dd','--decoder_dim', type=int, help='Dimensionality of decoder only', default=256)
+	parser.add_argument('-ebd','--embed_dim', type=int, help='Number of layers in encoder only', default=128),
+	parser.add_argument('-kvs','--key_value_size', type=int, help='Number of layers in encoder only', default=128)
+	parser.add_argument('-sim','--simple', type=bool, help='use simple dataset', default=False)
+	parser.add_argument('-w','--wandb', type=bool, help='determines if Wandb is to be used', default=False)
 
 	args = vars(parser.parse_args())
-	# wandb.init(project="11785_HW4P2", entity="stirumal", config=args)
+	wandb.init(project="11785_HW4P2", entity="stirumal", config=args)
 	train(args)
 	
