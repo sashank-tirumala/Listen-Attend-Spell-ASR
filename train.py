@@ -40,22 +40,20 @@ def train(model, criterion, train_loader, optimizer, i_ini, scheduler, scaler, u
 	if not using_wandb:
 		batch_bar = tqdm(total=len(train_loader), dynamic_ncols=True, desc='Train')
 	total_loss = 0
-	for i, (x,y,lx,ly) in enumerate(train_loader):
-		with torch.cuda.amp.autocast():  
-			x = x.to(device)
-			y = y.to(device)
-			predictions, attentions = model.forward(x, lx, y, mode="train", teacher_forcing=tf)
-			mask = torch.arange(ly.max()).unsqueeze(0) >= ly.unsqueeze(1)
-			mask = mask.view(-1).to(device)
-			loss = criterion(predictions.view(-1, len(LETTER_LIST)), y.view(-1))
-			loss = loss.masked_fill_(mask, 0)
-			loss = torch.sum(loss)/mask.sum()
+	for i, (x,y,lx,ly) in enumerate(train_loader):  
+		x = x.to(device)
+		y = y.to(device)
+		predictions, attentions = model.forward(x, lx, y, mode="train", teacher_forcing=tf)
+		mask = torch.arange(ly.max()).unsqueeze(0) >= ly.unsqueeze(1)
+		mask = mask.view(-1).to(device)
+		loss = criterion(predictions.view(-1, len(LETTER_LIST)), y.view(-1))
+		loss = loss.masked_fill_(mask, 0)
+		loss = torch.sum(loss)/mask.sum()
 		total_loss += float(loss)
 		optimizer.zero_grad()
 		torch.nn.utils.clip_grad_norm_(model.parameters(), 3.0)
-		scaler.scale(loss).backward()
-		scaler.step(optimizer)
-		scaler.update()
+		loss.backward()
+		optimizer.step()
 		if(using_wandb):
 			wandb.log({"loss":float(total_loss / (i + 1)), "step":int(i_ini), 'lr': float(optimizer.param_groups[0]['lr'])})
 		else:
@@ -117,10 +115,9 @@ def training(cfg):
 	criterion = nn.CrossEntropyLoss(reduction='none')
 	n_epochs = cfg["epochs"]
 	i_ini = 0
-	scaler = torch.cuda.amp.GradScaler()
 	for epoch in range(n_epochs):
 		start = time.time()
-		i_ini, loss = train(model, criterion, train_loader, optimizer, i_ini, scheduler=get_scheduler(epoch, cfg, scheduler),scaler=scaler, using_wandb = cfg["wandb"], tf = get_teacher_forcing(epoch, cfg), epoch = epoch)
+		i_ini, loss = train(model, criterion, train_loader, optimizer, i_ini, scheduler=get_scheduler(epoch, cfg, scheduler),scaler=None, using_wandb = cfg["wandb"], tf = get_teacher_forcing(epoch, cfg), epoch = epoch)
 		val(model, val_loader, criterion, using_wandb = cfg["wandb"], epoch = epoch)
 		stop = time.time()
 		if(cfg["wandb"]):

@@ -80,7 +80,7 @@ class bmmAttention(nn.Module):
         # Optional: dropout
 
     def forward(self, query, key, value, mask):
-        energy = torch.bmm(key, query.unsqueeze(2)).squeeze(2)/torch.sqrt(torch.tensor(key.shape[-1]).to(device))
+        energy = torch.bmm(key, query.unsqueeze(2)).squeeze(2)/torch.sqrt(torch.tensor(key.shape[-1], dtype=torch.float32).to(device))
         energy.masked_fill_(mask, torch.tensor(float("-inf")))
         attention = F.softmax(energy, dim= 1) #Pretty sure it is right, but noting anyway
         context = torch.bmm(attention.unsqueeze(1), value).squeeze(1)
@@ -93,7 +93,7 @@ class multiheadAttention(nn.Module):
 
     def forward(self, query, key, value, mask):
         
-        energy = torch.bmm(key, query.unsqueeze(2)).squeeze(2)/torch.sqrt(torch.tensor(key.shape[-1]).to(device))
+        energy = torch.bmm(key, query.unsqueeze(2)).squeeze(2)/torch.sqrt(torch.tensor(key.shape[-1], dtype=torch.float32).to(device))
         energy.masked_fill_(mask, torch.tensor(float("-inf")))
         # print("energy: ", energy.shape)
         attention = F.softmax(energy, dim= 1) #Pretty sure it is right, but noting anyway
@@ -142,7 +142,7 @@ class Decoder(nn.Module):
         mask = mask.to(device)
         #TODO Initialize the context
         predictions = []
-        prediction = torch.full((B,1), fill_value=0, device=device)
+        prediction = torch.full((B,1), fill_value=0, device=device, dtype=torch.float32)
         hidden_states = [None]*self.num_layers
         prediction = torch.zeros(B, 1).to(device)
         context = value[:, 0, :] #initializing context with the first value
@@ -152,7 +152,7 @@ class Decoder(nn.Module):
             if mode == 'train':
                 if teacher_forcing:
                     if i == 0:
-                        char_embed = torch.full((B, char_embeddings.shape[2]), fill_value=0, device=device) # For timestamp 0, input should be <SOS>, which is 0
+                        char_embed = torch.full((B, char_embeddings.shape[2]), fill_value=0, device=device, dtype=torch.float32) # For timestamp 0, input should be <SOS>, which is 0
                     else:
                         char_embed = char_embeddings[:, i-1, :]
                 else:
