@@ -48,7 +48,7 @@ class pBLSTM(nn.Module):
         x, len_x  = pad_packed_sequence(inp, batch_first=True)
         if(x.shape[1]%2 == 1):
             x = x[:, :-1, :]
-        len_x = torch.div(len_x, 2, rounding_mode='floor')
+        len_x = len_x // 2
         x = x.view(x.shape[0], int(x.shape[1]/2), x.shape[2]*2)
         packed_input = pack_padded_sequence(x,len_x, enforce_sorted=False, batch_first=True)
         del x, len_x
