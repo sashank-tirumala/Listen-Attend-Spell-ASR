@@ -67,10 +67,10 @@ def train(model, criterion, train_loader, optimizer, i_ini, scheduler, using_wan
 	else:
 		plot_attention(attentions)
 		batch_bar.close()
-	return i_ini, float(total_loss / (i + 1)
+	return i_ini, float(total_loss / (i + 1))
 
 def get_model(cfg):
-	model = Seq2Seq(input_dim = x.shape[-1], 
+	model = Seq2Seq(input_dim = len(LETTER_LIST), 
 	encoder_hidden_dim = cfg["encoder_dim"], 
 	decoder_hidden_dim = cfg["decoder_dim"], 
 	vocab_size=len(LETTER_LIST), 
@@ -83,7 +83,7 @@ def get_model(cfg):
 	return model
 
 def dataloader(cfg):
-	f(cfg["simple"]):
+	if(cfg["simple"]):
 		train_loader, val_loader = get_simple_dataloader(cfg["datapath"], batch_size = cfg["batch_size"])
 		return train_loader, val_loader, None
 	else:
@@ -99,10 +99,10 @@ def training(cfg):
 	i_ini = 0
 	for epoch in range(n_epochs):
 		i_ini, loss = train(model, criterion, train_loader, optimizer, i_ini, scheduler=None, using_wandb = cfg["wandb"], tf = get_teacher_forcing(epoch))
-		val(model, val_loader, using_wandb = cfg["wandb"], epoch)
+		val(model, val_loader, using_wandb = cfg["wandb"], epoch = epoch)
 		save_model(model, optimizer, scheduler, loss,  cfg)
 
-def save_model(model, optimizer, scheduler, loss,  cfg):
+def save_model(model, optimizer, scheduler, loss,  cfg, epoch):
 	torch.save({'epoch': epoch, 
 				'model_state_dict': model.state_dict(),
 				'optimizer_state_dict':optimizer.state_dict(),
@@ -112,14 +112,14 @@ def save_model(model, optimizer, scheduler, loss,  cfg):
 				}, cfg["runspath"]+"/"+"ckpt")
 
 def load_model(path):
-	checkpoint = torch.load(path):
+	checkpoint = torch.load(path)
 	model = get_model(checkpoint["cfg"])
-	optimizer = optim.Adam(model.parameters(), lr = cfg["lr"], weight_decay=cfg["w_decay"])
-	scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, cfg['epochs']*len(train_loader), eta_min=1e-6, last_epoch=- 1, verbose=False)
+	optimizer = optim.Adam(model.parameters(), lr = 0, weight_decay=0)
+	scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 100, eta_min=1e-6, last_epoch=- 1, verbose=False)
 	model.load_state_dict(checkpoint["model_state_dict"])
 	optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 	scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-	return model, optimizer, scheduler
+	return model, optimizer, scheduler, checkpoint
 def val(model, val_loader, using_wandb, epoch):
 	model.eval()
 	l2i, i2l = create_dictionaries(LETTER_LIST)
@@ -157,6 +157,14 @@ def get_dist(greedy_pred, y):
 		dist = dist + lev(target_str, pred_str)
 	return dist/y.shape[1]
 
+def test_get_save_load(args):
+	model = get_model(args)
+	optimizer = optim.Adam(model.parameters(), lr = args["lr"], weight_decay=args["w_decay"])
+	train_loader, val_loader, test_loader = dataloader(args)
+	scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args['epochs']*len(train_loader), eta_min=1e-6, last_epoch=- 1, verbose=False)
+	save_model(model, optimizer, scheduler, loss=10, cfg = args, epoch=3 )
+	m, o, s, c=load_model("/home/sashank/Courses/11785_HW4_P2/hello/ckpt")
+	print(m)
 if(__name__ == "__main__"):
 	torch.manual_seed(11785)
 	torch.cuda.manual_seed(11785)
@@ -185,6 +193,11 @@ if(__name__ == "__main__"):
 	if not os.path.isdir(args["runspath"]):
 		os.makedirs(args["runspath"])
 
-	wandb.init(project="11785_HW4P2", entity="stirumal", config=args)
-	train(args)
+	# wandb.init(project="11785_HW4P2", entity="stirumal", config=args)
+	#TEST TRAIN
+	# test_get_save_load(args)
+	
+	#TEST TRAIN
+	# train(args)
+
 	
