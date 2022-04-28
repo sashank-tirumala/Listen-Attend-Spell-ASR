@@ -120,7 +120,7 @@ def load_model(path):
 	optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 	scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
 	return model, optimizer, scheduler, checkpoint
-def val(model, val_loader, using_wandb, epoch):
+def val(model, val_loader, criterion, using_wandb, epoch):
 	model.eval()
 	l2i, i2l = create_dictionaries(LETTER_LIST)
 	dists = []
@@ -187,6 +187,15 @@ def test_train(cfg):
 	i_ini, loss = train(model, criterion, train_loader, optimizer, i_ini, scheduler=None, using_wandb = cfg["wandb"], tf = get_teacher_forcing(1, cfg))
 	print(i_ini, loss)
 
+def test_val(cfg):
+	model = get_model(cfg)
+	optimizer = optim.Adam(model.parameters(), lr = cfg["lr"], weight_decay=cfg["w_decay"])
+	wandb.init(project="Test", entity="stirumal", config=args)
+	train_loader, val_loader, test_loader = dataloader(cfg)
+	criterion = nn.CrossEntropyLoss(reduction='none')
+	for epoch in range(10):
+		val(model, val_loader, criterion, using_wandb = cfg["wandb"], epoch=epoch)
+
 if(__name__ == "__main__"):
 	torch.manual_seed(11785)
 	torch.cuda.manual_seed(11785)
@@ -222,6 +231,7 @@ if(__name__ == "__main__"):
 	# test_get_save_load(args)
 	
 	#TEST TRAIN
-	test_train(args)
+	# test_train(args)
+	test_val(args)
 
 	
