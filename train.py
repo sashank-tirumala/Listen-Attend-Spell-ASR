@@ -1,6 +1,5 @@
 import os
 import sys
-import pandas as pd
 import numpy as np
 # import Levenshtein as lev
 import torch
@@ -177,8 +176,8 @@ def val(model, val_loader, criterion, using_wandb, epoch):
 
 def get_dist(greedy_pred, y):
 	dist = 0
-	for b in range(y.shape[1]):
-		target_str = "".join(i2l[int(x)] for x in y[:,b])
+	for b in range(y.shape[0]):
+		target_str = "".join(i2l[int(x)] for x in y[b,:])
 		pred_str = "".join(i2l[int(x)] for x in greedy_pred[b,:])
 		target_str = target_str.split('<eos>')[0][:]
 		pred_str = pred_str.split('<eos>')[0][:]
