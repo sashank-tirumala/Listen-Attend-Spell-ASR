@@ -89,7 +89,7 @@ def get_teacher_forcing(e, cfg):
 	if(e < cfg["warmup"]):
 		return True
 	else:
-		rate = max(1 - e * 0.01, 0)
+		rate = max(1 - (e - cfg["warmup"]) * 0.01, 0.6)
 		if(np.random.uniform() < rate):
 			return True
 		else:
@@ -152,7 +152,8 @@ def val(model, val_loader, criterion, using_wandb, epoch):
 	dists = []
 	total_loss = 0
 	torch.cuda.empty_cache()
-	batch_bar = tqdm(total=len(val_loader), dynamic_ncols=True, desc='Train')
+	if not using_wandb:
+		batch_bar = tqdm(total=len(val_loader), dynamic_ncols=True, desc='Train')
 	for i, data in enumerate(val_loader):
 		with torch.no_grad():
 			x, y, lx, ly = data
@@ -161,15 +162,17 @@ def val(model, val_loader, criterion, using_wandb, epoch):
 			predictions, attentions = model(x, lx, y, mode="val")		
 			greedy_pred = torch.max(predictions, dim=2)[1]
 			dists.append(get_dist(greedy_pred, y))
-			batch_bar.update()
+			if not using_wandb:
+				batch_bar.update()
 			torch.cuda.empty_cache()
 	dists = np.array(dists)
 	lev_distance = np.mean(dists)
-	batch_bar.close()
 	if(using_wandb):
 		wandb.log({ "epoch":epoch, "lev_distance":lev_distance})
 	else:
 		print("lev_distance: ",lev_distance )
+		batch_bar.close()
+
 	# print("here")
 
 
