@@ -65,14 +65,19 @@ def transform_index_to_letter(y, i2l, strip_start_and_end = True):
 # letter2index, index2letter = create_dictionaries(LETTER_LIST)
 class LibriSamples(torch.utils.data.Dataset):
 
-    def __init__(self, data_path, letter2index, partition= "train", shuffle=True):
+    def __init__(self, data_path, letter2index, partition= "train", shuffle=True, normalize=False, means=None, stds=None):
         self.x_dir = data_path+"/"+partition+"/mfcc"
         self.y_dir = data_path+"/"+partition+"/transcript"
         self.x_files = os.listdir(data_path+"/"+partition+"/mfcc")
         self.y_files = os.listdir(data_path+"/"+partition+"/transcript")
         self.files = [x for x in zip(self.x_files, self.y_files)]
+        self.normalize = normalize
         if(shuffle):
             random.shuffle(self.files)
+        if(self.normalize):
+            self.means = means
+            self.stds = stds
+        
         self.letter2index = letter2index
         
 
@@ -82,7 +87,10 @@ class LibriSamples(torch.utils.data.Dataset):
 
     def __getitem__(self, ind):
         xdir ,ydir = self.files[ind]
-        x = torch.tensor(np.load(self.x_dir+"/"+xdir))
+        if self.normalize:
+            x = torch.tensor((np.load(self.x_dir+"/"+xdir) - self.means)/self.stds)
+        else:
+            x = torch.tensor(np.load(self.x_dir+"/"+xdir))
         # x = torch.nn.functional.normalize(input, p=2.0, dim = 1) #Maybe I need to add this
         y_s = np.load(self.y_dir+"/"+ydir)
         y_s = y_s[1: ]
@@ -104,11 +112,14 @@ class LibriSamples(torch.utils.data.Dataset):
 
 class LibriSamplesTest(torch.utils.data.Dataset):
 
-    def __init__(self, data_path, test_order): # test_order is the csv similar to what you used in hw1
+    def __init__(self, data_path, test_order, normalize=False, means=None, stds=None): # test_order is the csv similar to what you used in hw1
         with open(data_path + '/test/'+test_order, newline='') as f:
           reader = csv.reader(f)
           test_order_list = list(reader)
-        self.X = [torch.tensor(np.load(data_path + '/test/mfcc/' + X_path[0])) for X_path in test_order_list[1:]] # TODO: Load the npy files from test_order.csv and append into a list
+        if normalize:
+            self.X = [torch.tensor((np.load(data_path + '/test/mfcc/' + X_path[0]) - means)/stds) for X_path in test_order_list[1:]]
+        else:
+            self.X = [torch.tensor(np.load(data_path + '/test/mfcc/' + X_path[0])) for X_path in test_order_list[1:]] # TODO: Load the npy files from test_order.csv and append into a list
     
     def __len__(self):
         return len(self.X)
@@ -126,7 +137,7 @@ class LibriSamplesTest(torch.utils.data.Dataset):
 def test_dataloaders():
     root = 'hw4p2_student_data/hw4p2_student_data'
     bs=64
-    train_loader, val_loader, test_loader = get_dataloader(root, batch_size=bs)
+    train_loader, val_loader, test_loader = get_dataloader(root, batch_size=bs, normalize=False)
     LETTER_LIST = ['<sos>', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', \
          'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', "'", ' ', '<eos>']
     l2i, i2l = create_dictionaries(LETTER_LIST)
@@ -138,13 +149,18 @@ def test_dataloaders():
     print("Val dataset samples = {}, batches = {}".format(val_data.__len__(), len(val_loader)))
     print("Test dataset samples = {}, batches = {}".format(test_data.__len__(), len(test_loader)))
 
-def get_dataloader(root, batch_size=64, num_workers=4):
+def get_dataloader(root, batch_size=64, num_workers=4, normalize=True):
     LETTER_LIST = ['<sos>', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', \
          'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', "'", ' ', '<eos>']
     l2i, i2l = create_dictionaries(LETTER_LIST)
-    train_data = LibriSamples(root, l2i, 'train')
-    val_data = LibriSamples(root, l2i, 'dev')
-    test_data = LibriSamplesTest(root, "test_order.csv")
+    if normalize:
+        means, stds = get_dataset_normal(root)
+    else:
+        means = None
+        stds=None
+    train_data = LibriSamples(root, l2i, 'train', normalize=normalize, means= means, stds = stds)
+    val_data = LibriSamples(root, l2i, 'dev', normalize=normalize, means= means, stds = stds)
+    test_data = LibriSamplesTest(root, "test_order.csv", normalize=normalize, means= means, stds = stds)#TODO Normalize Test Dataset
     train_loader = DataLoader(train_data, num_workers=num_workers, batch_size = batch_size, collate_fn=train_data.collate_fn, drop_last=True)
     val_loader = DataLoader(val_data, num_workers=num_workers, batch_size = batch_size, collate_fn=val_data.collate_fn, drop_last=True)
     test_loader = DataLoader(test_data, num_workers=num_workers, batch_size = batch_size, collate_fn=test_data.collate_fn)
@@ -229,8 +245,32 @@ def generate_mask(lens):
         masks.append(mask_temp)
     masks = torch.stack(masks, dim=0)
     return masks
+
+def get_dataset_normal(data_path):
+    partition="train"
+    x_dir = data_path+"/"+partition+"/mfcc"
+    y_dir = data_path+"/"+partition+"/transcript"
+    x_files = os.listdir(data_path+"/"+partition+"/mfcc")
+    y_files = os.listdir(data_path+"/"+partition+"/transcript")
+    means = []
+    stds=[]
+    for x_file in x_files:
+        temp = np.load(x_dir+"/"+x_file)
+        mean = np.mean(temp, axis=0)
+        std = np.std(temp, axis=0)
+        means.append(mean)
+        stds.append(std)
+    means = np.stack(means, axis=0)
+    stds = np.stack(stds, axis=0)
+    means = np.mean(means, axis=0)
+    stds= np.mean(stds, axis=0)
+    return means, stds
+
+
+
 if(__name__ == "__main__"):
-    # test_dataloaders()
+    test_dataloaders()
     # test_simple_dataloader()
-    testi2l()
+    # testi2l()
+    # get_dataset_normal()
     
