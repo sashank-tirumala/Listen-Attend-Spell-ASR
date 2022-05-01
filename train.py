@@ -64,9 +64,10 @@ def train(model, criterion, train_loader, optimizer, i_ini, scheduler, scaler, u
 		if(scheduler is not None):
 			scheduler.step()
 		i_ini += 1
-	if(using_wandb and epoch<25):
-		plot_attention(attentions)
-		wandb.log({"attention ": wandb.Image("attention.png")})
+	if(using_wandb):
+		if(epoch < 25 or epoch%5 == 0):
+			plot_attention(attentions)
+			wandb.log({"attention ": wandb.Image("attention.png")})
 	else:
 		plot_attention(attentions)
 		batch_bar.close()
@@ -89,7 +90,7 @@ def get_teacher_forcing(e, cfg):
 	if(e < cfg["warmup"]):
 		return True
 	else:
-		rate = max(1 - (e - cfg["warmup"]) * 0.01, 0.6)
+		rate = max(1 - (e - cfg["warmup"]) * 0.01, 0.8)
 		if(np.random.uniform() < rate):
 			return True
 		else:
@@ -107,7 +108,7 @@ def dataloader(cfg):
 		train_loader, val_loader = get_simple_dataloader(cfg["datapath"], batch_size = cfg["batch_size"])
 		return train_loader, val_loader, None
 	else:
-		train_loader, val_loader, test_loader = get_dataloader(cfg["datapath"], batch_size=cfg["batch_size"])
+		train_loader, val_loader, test_loader = get_dataloader(cfg["datapath"], batch_size=cfg["batch_size"], normalize = cfg["normalize"])
 		return train_loader, val_loader, test_loader
 def training(cfg):
 	model = get_model(cfg)
@@ -244,6 +245,7 @@ if(__name__ == "__main__"):
 	parser.add_argument('-w','--wandb', type=int, help='determines if Wandb is to be used', default=0)
 	parser.add_argument('-wu','--warmup', type=int, help='determines if Wandb is to be used', default=12)
 	parser.add_argument('-drp','--dropout', type=float, help='dropout percent', default=0.5)
+	parser.add_argument('-n','--normalize', type=int, help='normalize dataset', default=0)
 
 
 
