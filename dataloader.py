@@ -39,7 +39,7 @@ def create_dictionaries(letter_list):
         letter2index[letter_list[i]] = i 
     return letter2index, index2letter
     
-#Don't know what he wants right  now and why, will figure out
+
 def transform_index_to_letter(y, i2l, strip_start_and_end = True):
     '''
     Transforms numerical index input to string output by converting each index 
@@ -61,8 +61,8 @@ def transform_index_to_letter(y, i2l, strip_start_and_end = True):
             target_str = "<sos>"+target_str+"<eos>"
         transcripts.append(target_str)
     return transcripts
-# Create the letter2index and index2letter dictionary
-# letter2index, index2letter = create_dictionaries(LETTER_LIST)
+
+
 class LibriSamples(torch.utils.data.Dataset):
 
     def __init__(self, data_path, letter2index, partition= "train", shuffle=True):
@@ -102,6 +102,7 @@ class LibriSamples(torch.utils.data.Dataset):
 
         return batch_x_pad, batch_y_pad, torch.tensor(lengths_x), torch.tensor(lengths_y)
 
+
 class LibriSamplesTest(torch.utils.data.Dataset):
 
     def __init__(self, data_path, test_order): # test_order is the csv similar to what you used in hw1
@@ -124,7 +125,7 @@ class LibriSamplesTest(torch.utils.data.Dataset):
         return batch_x_pad, torch.tensor(lengths_x)
 
 def test_dataloaders():
-    root = 'hw4p2_student_data/hw4p2_student_data'
+    root = 'LAS-Dataset/complete'
     bs=64
     train_loader, val_loader, test_loader = get_dataloader(root, batch_size=bs)
     LETTER_LIST = ['<sos>', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', \
@@ -189,7 +190,7 @@ def get_simple_dataloader(root, batch_size, num_workers=4):
     return train_loader, val_loader
 
 def test_simple_dataloader():
-    root = '/home/sashank/Courses/11785_HW4_P2/hw4p2_simple/hw4p2_simple'
+    root = 'LAS-Dataset/simple'
     bs=64
     train_loader, val_loader = get_simple_dataloader(root, batch_size=bs)
     LETTER_LIST = ['<sos>', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', \
@@ -203,7 +204,7 @@ def test_simple_dataloader():
     pass
 
 def testi2l():
-    root = 'hw4p2_student_data/hw4p2_student_data'
+    root = 'LAS-Dataset/complete'
     bs=2
     train_loader, val_loader, test_loader = get_dataloader(root, batch_size=bs)
     LETTER_LIST = ['<sos>', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', \
@@ -211,10 +212,8 @@ def testi2l():
     l2i, i2l = create_dictionaries(LETTER_LIST)
     x, y, len_x, len_y = next(iter(val_loader))
     ts = transform_index_to_letter(y, i2l)
-    print(len_y)
     mask = generate_mask(len_y)
-    print(mask)
-    # print(ts)
+    print(ts)
 
 def generate_mask(lens):
     """
@@ -230,7 +229,7 @@ def generate_mask(lens):
     masks = torch.stack(masks, dim=0)
     return masks
 if(__name__ == "__main__"):
-    # test_dataloaders()
-    # test_simple_dataloader()
+    test_dataloaders()
+    test_simple_dataloader()
     testi2l()
     

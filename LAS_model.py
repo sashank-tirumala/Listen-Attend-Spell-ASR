@@ -19,6 +19,7 @@ from torch.utils import data
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 import csv
 from torch.autograd import Variable
+from dataloader import get_dataloader
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
@@ -186,20 +187,18 @@ class Seq2Seq(nn.Module):
         predictions, attentions = self.decoder(key, value, encoder_len, y=y, mode=mode, teacher_forcing=teacher_forcing)
         return predictions, attentions
 
-def test_pBLSTM():
-    from dataloader import get_dataloader
-    root = 'hw4p2_student_data/hw4p2_student_data'
+def test_pBLSTM(root):
     train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
     x,y,len_x, len_y = next(iter(train_loader))
     pyr = pBLSTM(int(x.shape[-1]), 512)
     print(x.shape)
-    y, len_y = pyr(x, len_x)
+    packed_input = pack_padded_sequence(x,len_x, enforce_sorted=False, batch_first=True)
+    out1 = pyr(packed_input)
+    y, lengths = pad_packed_sequence(out1,  batch_first=True)
     print(y.shape)
-    pass
 
-def test_encoder():
-    from dataloader import get_dataloader
-    root = 'hw4p2_student_data/hw4p2_student_data'
+
+def test_encoder(root):
     train_loader, val_loader, test_loader = get_dataloader(root, batch_size=64)
     x,y,len_x, len_y = next(iter(train_loader))
     x = x.cuda()
@@ -209,28 +208,11 @@ def test_encoder():
     key, value, len_y = pyr(x, len_x)
     print(key.shape, value.shape)
 
-def test_bmmAttention():
-    from dataloader import get_dataloader
-    root = 'hw4p2_student_data/hw4p2_student_data'
+def test_decoder(root):
     train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
     x,y,len_x, len_y = next(iter(train_loader))
     x = x.cuda()
     y = y.cuda()
-    pyr = Encoder(int(x.shape[-1]), 256).to(device)
-    key, value, len_y = pyr(x, len_x)
-    att = bmmAttention()
-    ctxt, att= att(query, key, value, mask)
-    print(ctxt.shape, att.shape)
-
-def test_decoder():
-    from dataloader import get_dataloader
-    root = 'hw4p2_student_data/hw4p2_student_data'
-    train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
-    x,y,len_x, len_y = next(iter(train_loader))
-    x = x.cuda()
-    y = y.cuda()
-    # len_x = len_x.cuda()
-    # len_y = len_y.cuda()
     pyr = Encoder(int(x.shape[-1]), 256).to(device)
     print(x.shape[-1])
     key, value, len_y = pyr(x, len_x)
@@ -240,9 +222,7 @@ def test_decoder():
     print("predictions: ", pred)
     print("attention: ",att)
 
-def test_seq2seq():
-    from dataloader import get_dataloader
-    root = 'hw4p2_student_data/hw4p2_student_data'
+def test_seq2seq(root):
     train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
     x,y,len_x, len_y = next(iter(val_loader))
     x = x.cuda()
@@ -254,9 +234,7 @@ def test_seq2seq():
     print("Predictions: ",pred.shape)
     print("Attention: ",att.shape)
 
-def test_locked_dropout():
-    from dataloader import get_dataloader
-    root = 'hw4p2_student_data/hw4p2_student_data'
+def test_locked_dropout(root):
     train_loader, val_loader, test_loader = get_dataloader(root, batch_size=2)
     x,y,len_x, len_y = next(iter(val_loader))
     dp = LockedDropout(dropout = 0.99)
@@ -267,9 +245,9 @@ def test_locked_dropout():
 
 
 if(__name__ == "__main__"):
-    # test_pBLSTM()
-    # test_encoder()
-    # test_bmmAttention()
-    test_decoder()
-    # test_seq2seq()
-    # test_locked_dropout()
+    data_path = "LAS-Dataset/complete"
+    test_pBLSTM(data_path)
+    test_encoder(data_path)
+    test_decoder(data_path)
+    test_seq2seq(data_path)
+    test_locked_dropout(data_path)
