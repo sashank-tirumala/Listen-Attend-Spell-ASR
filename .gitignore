@@ -2,3 +2,4 @@ LAS-Dataset.zip
 LAS-Dataset/
 runs/
 wandb/
+__pycache__

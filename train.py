@@ -484,7 +484,7 @@ if __name__ == "__main__":
         "-sim", "--simple", type=int, help="use simple dataset", default=0
     )
     parser.add_argument(
-        "-w", "--wandb", type=int, help="determines if Wandb is to be used", default=0
+        "-w", "--wandb", type=int, help="determines if Wandb is to be used", default=1
     )
     parser.add_argument(
         "-wu",

@@ -1,2 +1,3 @@
-pip install seaborn
-pip install IPython
+pip install tqdm
+pip install levenshtein
+pip install wandb
