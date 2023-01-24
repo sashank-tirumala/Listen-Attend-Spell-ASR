@@ -1,7 +1,6 @@
 import os
 import sys
 import numpy as np
-# import Levenshtein as lev
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -64,6 +63,9 @@ def transform_index_to_letter(y, i2l, strip_start_and_end = True):
 
 
 class LibriSamples(torch.utils.data.Dataset):
+    """
+    Custom Dataset meant to handle a modified version of the LibriSpeech Dataset
+    """
 
     def __init__(self, data_path, letter2index, partition= "train", shuffle=True):
         self.x_dir = data_path+"/"+partition+"/mfcc"
@@ -83,7 +85,6 @@ class LibriSamples(torch.utils.data.Dataset):
     def __getitem__(self, ind):
         xdir ,ydir = self.files[ind]
         x = torch.tensor(np.load(self.x_dir+"/"+xdir))
-        # x = torch.nn.functional.normalize(input, p=2.0, dim = 1) #Maybe I need to add this
         y_s = np.load(self.y_dir+"/"+ydir)
         y_s = y_s[1: ]
         y = torch.tensor([self.letter2index[x] for x in y_s])
@@ -95,22 +96,19 @@ class LibriSamples(torch.utils.data.Dataset):
         y_batch = [y for x,y in batch]
         batch_x_pad = pad_sequence(x_batch, batch_first=True)
         lengths_x = [len(x) for x in x_batch]
-
         batch_y_pad = pad_sequence(y_batch, batch_first=True)
-        #Shifting y by one step forward
         lengths_y = [len(y) for y in y_batch]
-
         return batch_x_pad, batch_y_pad, torch.tensor(lengths_x), torch.tensor(lengths_y)
 
 
 class LibriSamplesTest(torch.utils.data.Dataset):
 
-    def __init__(self, data_path, test_order): # test_order is the csv similar to what you used in hw1
+    def __init__(self, data_path, test_order):
         with open(data_path + '/test/'+test_order, newline='') as f:
           reader = csv.reader(f)
           test_order_list = list(reader)
-        self.X = [torch.tensor(np.load(data_path + '/test/mfcc/' + X_path[0])) for X_path in test_order_list[1:]] # TODO: Load the npy files from test_order.csv and append into a list
-    
+        self.X = [torch.tensor(np.load(data_path + '/test/mfcc/' + X_path[0])) for X_path in test_order_list[1:]]
+
     def __len__(self):
         return len(self.X)
     
@@ -140,6 +138,19 @@ def test_dataloaders():
     print("Test dataset samples = {}, batches = {}".format(test_data.__len__(), len(test_loader)))
 
 def get_dataloader(root, batch_size=64, num_workers=4):
+    """
+    Returns dataloaders used for model training
+    
+    Args:
+        root = path to the dataset
+        batch_size = batch size of the data-loader
+        num_workers = number of CPU workers used in loading data
+    
+    Returns:
+        train_loader = dataloader for training data
+        val_loader = dataloader for validation data
+        test_loader = dataloader for test data
+    """
     LETTER_LIST = ['<sos>', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', \
          'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', "'", ' ', '<eos>']
     l2i, i2l = create_dictionaries(LETTER_LIST)
@@ -152,6 +163,9 @@ def get_dataloader(root, batch_size=64, num_workers=4):
     return train_loader, val_loader, test_loader
 
 class LibriSamplesSimple:
+    """
+    Custom Dataset to handle a much smaller version of the LibriSpeech Dataset used for debugging
+    """
     def __init__(self, data_path, letter2index, partition= "train", shuffle=True):
         self.X = np.load(data_path+"/"+partition+".npy", allow_pickle=True)
         self.Y = np.load(data_path+"/"+partition+"_transcripts.npy", allow_pickle=True)
@@ -217,8 +231,7 @@ def testi2l():
 
 def generate_mask(lens):
     """
-    Generates a mask, not sure if this mask will be used in attention yet. In
-    Training it should be used
+    Generates a mask, used by attention module
     """
     lens = torch.tensor(lens).to(device)
     max_len = torch.max(lens)

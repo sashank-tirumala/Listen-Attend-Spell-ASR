@@ -1,2 +1,4 @@
 LAS-Dataset.zip
 LAS-Dataset/
+runs/
+wandb/

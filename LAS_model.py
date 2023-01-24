@@ -1,7 +1,6 @@
 import os
 import sys
 import numpy as np
-# import Levenshtein as lev
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,6 +23,11 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 class LockedDropout(nn.Module):
+    """
+    Locked Dropout is a custom implementation of dropout that ensures the same
+    neurons are dropped out while backpropagating through time for Recurrent
+    Neural Networks. 
+    """
     def __init__(self, dropout = 0.5):
         super().__init__()
         self.dropout = dropout
@@ -40,6 +44,9 @@ class LockedDropout(nn.Module):
             + 'p=' + str(self.p) + ')'
 
 class pBLSTM(nn.Module):
+    """
+    Pyramidal Bi-LSTM implementation that compresses the data while passing it through an LSTM. 
+    """
     def __init__(self, input_dim, hidden_dim):
         super(pBLSTM, self).__init__()
         self.blstm = nn.LSTM(input_size = input_dim*2, hidden_size = hidden_dim, num_layers=1, bidirectional=True, batch_first=True)
@@ -57,6 +64,9 @@ class pBLSTM(nn.Module):
         return out1
 
 class Encoder(nn.Module):
+    """
+    Encoder of Listen Attend Spell implementation, uses Pyramidal Bi LSTM followed by linear layer to generate key and value
+    """
     def __init__(self, input_dim, encoder_hidden_dim, key_value_size=128, num_layers=4):
         super(Encoder, self).__init__()
         self.lstm = nn.LSTM(input_size = input_dim, hidden_size = encoder_hidden_dim, bidirectional=True, num_layers=1, batch_first=True)
@@ -76,41 +86,29 @@ class Encoder(nn.Module):
         return key, value, lengths
 
 class bmmAttention(nn.Module):
+    """
+    Custom implementation of Soft Single Head Attention using Batched Matrix Multiplications. 
+    """
     def __init__(self, normalize = False):
         super(bmmAttention, self).__init__()
-        # Optional: dropout
 
     def forward(self, query, key, value, mask):
         energy = torch.bmm(key, query.unsqueeze(2)).squeeze(2)/torch.sqrt(torch.tensor(key.shape[-1]).to(device))
         energy.masked_fill_(mask, torch.tensor(float("-inf")))
-        attention = F.softmax(energy, dim= 1) #Pretty sure it is right, but noting anyway
-        context = torch.bmm(attention.unsqueeze(1), value).squeeze(1)
-        return context, attention
-
-class multiheadAttention(nn.Module):
-    def __init__(self, normalize = False):
-        super(bmmAttention, self).__init__()
-        # Optional: dropout
-
-    def forward(self, query, key, value, mask):
-        
-        energy = torch.bmm(key, query.unsqueeze(2)).squeeze(2)/torch.sqrt(torch.tensor(key.shape[-1]).to(device))
-        energy.masked_fill_(mask, torch.tensor(float("-inf")))
-        # print("energy: ", energy.shape)
-        attention = F.softmax(energy, dim= 1) #Pretty sure it is right, but noting anyway
-        # print("attention: ",attention.shape)
-        # print("value: ",value.shape)
+        attention = F.softmax(energy, dim= 1)
         context = torch.bmm(attention.unsqueeze(1), value).squeeze(1)
         return context, attention
 
 
 class Decoder(nn.Module):
+    """
+    Decoder network of Listen Attend Spell, uses custom LSTM decoder followed by an attention layer and a linear layer
+    to generate output logits. 
+    """
     def __init__(self, vocab_size, decoder_hidden_dim, embed_dim ,key_value_size=128, num_decoder_layers=2, attention_type="single", dropout= 0.5):
         super(Decoder, self).__init__()
-        #Be careful with padding_idx
         embed_dim = 2*key_value_size #Needed for weight tying
         self.embedding = nn.Embedding(num_embeddings = vocab_size, embedding_dim = embed_dim, padding_idx = 0)
-        #Might want to concatenate context here
         self.lstms = nn.ModuleList([])
         self.lstms.append(nn.LSTMCell(embed_dim+key_value_size, hidden_size = decoder_hidden_dim))
         for i in range(0, num_decoder_layers-2):
@@ -127,8 +125,8 @@ class Decoder(nn.Module):
         for i in range(num_decoder_layers):
             self.locked_dropouts.append(LockedDropout(dropout))
 
-        #Optional Weight Tying
-        self.character_prob.weight = self.embedding.weight #
+        #Optional Weight Tying -- Speeds up training, slightly lower performance
+        self.character_prob.weight = self.embedding.weight
 
     def forward(self, key , value, encoder_len, y=None, mode='train', teacher_forcing=True):
         B, key_seq_max_len, key_value_size = key.shape
@@ -141,7 +139,6 @@ class Decoder(nn.Module):
         #Creating the attention mask here:
         mask = torch.arange(encoder_len.max()).unsqueeze(0) >= encoder_len.unsqueeze(1)  # encoder_len original len for seq, (B, T)
         mask = mask.to(device)
-        #TODO Initialize the context
         predictions = []
         prediction = torch.full((B,1), fill_value=0, device=device)
         hidden_states = [None]*self.num_layers
@@ -157,9 +154,9 @@ class Decoder(nn.Module):
                     else:
                         char_embed = char_embeddings[:, i-1, :]
                 else:
-                    char_embed = self.embedding(softmax(prediction).argmax(dim=-1))
+                    char_embed = self.embedding(F.softmax(prediction).argmax(dim=-1))
             else:
-                char_embed = self.embedding(softmax(prediction).argmax(dim=-1))
+                char_embed = self.embedding(F.softmax(prediction).argmax(dim=-1))
             y_context = torch.cat([char_embed, context], dim=1)
             y_context = self.locked_dropouts[0](y_context.unsqueeze(1)).squeeze(1)
             hidden_states[0] = self.lstms[0](y_context, hidden_states[0])
