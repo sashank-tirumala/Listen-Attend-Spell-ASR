@@ -162,8 +162,6 @@ def get_model(cfg):
         input_dim=13,
         encoder_hidden_dim=cfg["encoder_dim"],
         decoder_hidden_dim=cfg["decoder_dim"],
-        vocab_size=len(LETTER_LIST),
-        embed_dim=cfg["embed_dim"],
         key_value_size=cfg["key_value_size"],
         num_layers=cfg["num_layers_encoder"],
         num_decoder_layers=cfg["num_layers_decoder"],
