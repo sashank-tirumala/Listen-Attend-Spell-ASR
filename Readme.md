@@ -48,8 +48,7 @@ The below set of hyperparameters should give you the best performance on this da
 * `python train.py --lr 3e-4 -wd 1e-6 -bs 64 -e 100 -nl 4 -nld 3 -ed 256 -dd 256 -ebd 128 -kvs 256 -sim 0 -dp LAS-Dataset/complete -rp runs/ -w 1 -wu 0 -drp 0.3`
 In general a few observations regarding the parameters:
 1. The bigger the Embed dimensions, Key, Value dimensions are the faster attention converges but also the more memory hungry the model gets.
-2. You need a 100% teacher forcing rate till at least the Attention converges, if the t:w
-eacher forcing rate falls below 60%, attention begins to diverge. In general keep Teacher Forcing Rate around 80% always and only start decreasing it after around 10 epochs. 
+2. You need a 100% teacher forcing rate till at least the Attention converges, if the teacher forcing rate falls below 60%, attention begins to diverge. In general keep Teacher Forcing Rate around 80% always and only start decreasing it after around 10 epochs. 
 3. Removing weight tying, increasing decoder depth, increasing encoder depth did not seem to affect final performance. 
 
 If your hyperparameters are good, your attention should converge in around 10 epochs. Here is how that converged attention would look (quite similar to the paper):
